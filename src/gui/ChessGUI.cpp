@@ -46,18 +46,18 @@ void ChessGUI::initialize()
     loadTextures();
 
     // Load font
-    if (!font.loadFromFile("src/assets/fonts/Roboto-Regular.ttf"))
+    if (!font.loadFromFile("assets/fonts/Roboto-Regular.ttf"))
     {
         std::cerr << "Failed to load font!" << std::endl;
     }
 
     // Load sounds
-    if (!moveSoundBuffer.loadFromFile("src/assets/sounds/Move.ogg"))
+    if (!moveSoundBuffer.loadFromFile("assets/sounds/Move.ogg"))
     {
         std::cerr << "Failed to load move sound!" << std::endl;
     }
 
-    if (!captureSoundBuffer.loadFromFile("src/assets/sounds/Capture.ogg"))
+    if (!captureSoundBuffer.loadFromFile("assets/sounds/Capture.ogg"))
     {
         std::cerr << "Failed to load capture sound!" << std::endl;
     }
@@ -128,7 +128,7 @@ void ChessGUI::loadTextures(const std::string &theme)
         for (int p = 0; p < 6; p++)
         {
             int index = c * 6 + p;
-            std::string filename = "src/assets/themes/" + theme + "/" + colors[c] + pieces[p] + ".png";
+            std::string filename = "assets/themes/" + theme + "/" + colors[c] + pieces[p] + ".png";
             if (!pieceTextures[index].loadFromFile(filename))
             {
                 std::cerr << "Failed to load texture: " << filename << std::endl;
