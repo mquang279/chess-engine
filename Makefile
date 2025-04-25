@@ -6,7 +6,7 @@ CFLAGS = -Wall -O3 -march=native -std=c++20 -Isrc
 LDFLAGS = -lsfml-graphics -lsfml-window -lsfml-audio -lsfml-system
 
 # Source files
-SOURCES = src/ChessGUI.cpp src/main.cpp src/engine/ChessEngine.cpp
+SOURCES = src/gui/ChessGUI.cpp src/main.cpp src/engine/ChessEngine.cpp src/engine/PestoEvaluation.cpp
 OBJECTS = $(SOURCES:.cpp=.o)
 EXECUTABLE = chess-gui
 
@@ -29,13 +29,6 @@ packages:
 	else \
 		echo "SFML already installed."; \
 	fi
-
-# Copy required assets from the main project
-setup-assets:
-	mkdir -p src/assets/fonts src/assets/sounds src/assets/themes/tartanian
-	cp -r ../src/assets/fonts/* src/assets/fonts/
-	cp -r ../src/assets/sounds/* src/assets/sounds/
-	cp -r ../src/assets/themes/tartiana/* src/assets/themes/tartanian/
 
 # Clean rule
 clean:

@@ -2,9 +2,30 @@
 #include <algorithm>
 #include <ctime>
 #include <limits>
+#include <iomanip>
+#include <sstream>
 
 ChessEngine::ChessEngine() : rng(static_cast<unsigned int>(std::time(nullptr)))
 {
+}
+
+void ChessEngine::printSearchInfo(const SearchStats &stats)
+{
+    float timeInSec = stats.duration.count() / 1000.0f;
+
+    // Calculate nodes per second
+    uint64_t nps = (timeInSec > 0) ? static_cast<uint64_t>(stats.nodes / timeInSec) : 0;
+
+    std::cout << "Depth: " << stats.depth
+              << ", Evaluation: " << stats.score
+              << ", Nodes: " << stats.nodes
+              << ", Time: " << stats.duration.count() << "ms"
+              << ", NPS: " << nps;
+
+    if (stats.bestMove != chess::Move::NULL_MOVE)
+    {
+        std::cout << ", Best move: " << stats.bestMove << std::endl;
+    }
 }
 
 chess::Move ChessEngine::getBestMove(chess::Board &board)
@@ -23,39 +44,105 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         return moves[0];
     }
 
+    // For iterative deepening
     chess::Move bestMove = chess::Move::NULL_MOVE;
-    int bestScore = std::numeric_limits<int>::min();
+    chess::Move previousBestMove = chess::Move::NULL_MOVE;
+    SearchStats stats;
 
-    // Alpha-beta parameters
-    int alpha = std::numeric_limits<int>::min();
-    int beta = std::numeric_limits<int>::max();
+    // Start timing the entire search
+    auto startTime = std::chrono::high_resolution_clock::now();
+    std::chrono::seconds timeLimit(TIME_LIMIT); // Use the TIME_LIMIT constant from the header
 
-    // Try each move and evaluate the resulting position
-    for (int i = 0; i < moves.size(); i++)
+    // Iterative deepening - from depth 1 to MAX_DEPTH
+    for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
-        chess::Move move = moves[i];
-        board.makeMove(move);
+        stats.reset();
+        stats.depth = depth;
 
-        // Use alpha-beta pruning with depth 3
-        int score = alphaBeta(board, 3, alpha, beta, false);
+        // For measuring time at each depth
+        auto depthStartTime = std::chrono::high_resolution_clock::now();
 
-        board.unmakeMove(move);
+        // Alpha-beta parameters
+        int alpha = std::numeric_limits<int>::min();
+        int beta = std::numeric_limits<int>::max();
+        int bestScore = std::numeric_limits<int>::min();
 
-        // Update best move if this move is better
-        if (score > bestScore)
+        // Try each move and evaluate the resulting position
+        for (int i = 0; i < moves.size(); i++)
         {
-            bestScore = score;
-            bestMove = move;
-            alpha = std::max(alpha, bestScore);
+            chess::Move move = moves[i];
+            board.makeMove(move);
+
+            uint64_t nodesSearched = 0;
+            int score = negamax(board, depth - 1, alpha, beta, nodesSearched);
+            stats.nodes += nodesSearched;
+
+            board.unmakeMove(move);
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestMove = move;
+                alpha = std::max(alpha, bestScore);
+            }
+
+            // Check if we've exceeded the time limit
+            auto currentTime = std::chrono::high_resolution_clock::now();
+            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime);
+            if (elapsedTime >= timeLimit)
+            {
+                std::cout << "Search time limit exceeded (" << timeLimit.count() << " seconds). Stopping search." << std::endl;
+
+                // Print partial info for this depth
+                auto depthEndTime = std::chrono::high_resolution_clock::now();
+                stats.duration = std::chrono::duration_cast<std::chrono::milliseconds>(depthEndTime - depthStartTime);
+                stats.score = bestScore;
+                stats.bestMove = bestMove;
+                printSearchInfo(stats);
+
+                // Print total search time
+                auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(elapsedTime);
+                std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
+
+                return bestMove != chess::Move::NULL_MOVE ? bestMove : previousBestMove;
+            }
+        }
+
+        // Update stats for this depth
+        auto depthEndTime = std::chrono::high_resolution_clock::now();
+        stats.duration = std::chrono::duration_cast<std::chrono::milliseconds>(depthEndTime - depthStartTime);
+        stats.score = bestScore;
+        stats.bestMove = bestMove;
+
+        // Print info for this depth
+        printSearchInfo(stats);
+
+        // Save the best move from this depth as our current best
+        previousBestMove = bestMove;
+
+        // Check if we've exceeded the time limit after completing a depth
+        auto currentTime = std::chrono::high_resolution_clock::now();
+        auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime);
+        if (elapsedTime >= timeLimit)
+        {
+            std::cout << "Search time limit exceeded (" << timeLimit.count() << " seconds). Stopping search." << std::endl;
+            break;
         }
     }
 
+    // Print total search time
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+    std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
+    std::cout << "----------------------------------------------" << std::endl;
     return bestMove;
 }
 
-int ChessEngine::alphaBeta(chess::Board &board, int depth, int alpha, int beta, bool maximizingPlayer)
+int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes)
 {
-    // Base case: reached the maximum depth or terminal position
+    nodes++;
+
+    // Base case: reached leaf node or terminal position
     if (depth == 0 || board.isGameOver().first != chess::GameResultReason::NONE)
     {
         return evaluatePosition(board);
@@ -70,7 +157,7 @@ int ChessEngine::alphaBeta(chess::Board &board, int depth, int alpha, int beta, 
         // If in check, it's a checkmate
         if (board.inCheck())
         {
-            return maximizingPlayer ? -10000 : 10000; // Large negative/positive value for checkmate
+            return -10000 + depth; // Prefer shorter mates: lower depth = closer mate
         }
         else
         {
@@ -78,46 +165,31 @@ int ChessEngine::alphaBeta(chess::Board &board, int depth, int alpha, int beta, 
         }
     }
 
-    if (maximizingPlayer)
+    int bestScore = std::numeric_limits<int>::min();
+
+    for (int i = 0; i < moves.size(); i++)
     {
-        int maxEval = std::numeric_limits<int>::min();
+        board.makeMove(moves[i]);
+        // Negamax recursion with negated alpha/beta window and negated return value
+        int score = -negamax(board, depth - 1, -beta, -alpha, nodes);
+        board.unmakeMove(moves[i]);
 
-        for (int i = 0; i < moves.size(); i++)
+        // Update best score
+        bestScore = std::max(bestScore, score);
+
+        // Update alpha for pruning
+        alpha = std::max(alpha, score);
+        if (alpha >= beta)
         {
-            board.makeMove(moves[i]);
-            int eval = alphaBeta(board, depth - 1, alpha, beta, false);
-            board.unmakeMove(moves[i]);
-
-            maxEval = std::max(maxEval, eval);
-            alpha = std::max(alpha, eval);
-
-            if (beta <= alpha)
-            {
-                break; // Beta cutoff
-            }
+            break; // Beta cutoff
         }
-
-        return maxEval;
     }
-    else
-    {
-        int minEval = std::numeric_limits<int>::max();
 
-        for (int i = 0; i < moves.size(); i++)
-        {
-            board.makeMove(moves[i]);
-            int eval = alphaBeta(board, depth - 1, alpha, beta, true);
-            board.unmakeMove(moves[i]);
+    return bestScore;
+}
 
-            minEval = std::min(minEval, eval);
-            beta = std::min(beta, eval);
-
-            if (beta <= alpha)
-            {
-                break; // Alpha cutoff
-            }
-        }
-
-        return minEval;
-    }
+int ChessEngine::evaluatePosition(const chess::Board &board)
+{
+    // Use Pesto's evaluation function
+    return pestoEval.evaluate(board);
 }

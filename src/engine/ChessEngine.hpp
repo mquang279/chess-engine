@@ -2,9 +2,12 @@
 #define CHESS_ENGINE_HPP
 
 #include "../chess.hpp"
+#include "PestoEvaluation.hpp"
 #include <vector>
 #include <map>
 #include <random>
+#include <chrono>
+#include <iostream>
 
 class ChessEngine
 {
@@ -15,21 +18,34 @@ public:
     // Get the best move for the current position
     chess::Move getBestMove(chess::Board &board);
 
-private:
-    // Alpha-beta pruning search algorithm
-    int alphaBeta(chess::Board &board, int depth, int alpha, int beta, bool maximizingPlayer);
+    // Maximum search depth
+    const int MAX_DEPTH = 6;
+    const int TIME_LIMIT = 10;
 
-    // Static evaluation function
+private:
+    struct SearchStats
+    {
+        int depth = 0;
+        int score = 0;
+        uint64_t nodes = 0;
+        std::chrono::milliseconds duration;
+        chess::Move bestMove = chess::Move::NULL_MOVE;
+
+        void reset()
+        {
+            nodes = 0;
+            score = 0;
+            bestMove = chess::Move::NULL_MOVE;
+        }
+    };
+
+    int negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes);
+
     int evaluatePosition(const chess::Board &board);
 
-    // Piece values for material evaluation
-    std::map<chess::PieceType, int> pieceValues;
+    void printSearchInfo(const SearchStats &stats);
 
-    // Piece-square tables for positional evaluation
-    std::map<chess::PieceType, std::array<int, 64>> pieceSquareTables;
-
-    // Initialize evaluation tables
-    void initializeEvaluationTables();
+    PestoEvaluation pestoEval;
 
     // Random number generator for breaking ties or adding some randomness
     std::mt19937 rng;

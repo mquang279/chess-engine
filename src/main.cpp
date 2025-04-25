@@ -1,6 +1,6 @@
 #include <iostream>
 #include <string>
-#include "ChessGUI.hpp"
+#include "gui/ChessGUI.hpp"
 
 int main(int argc, char **argv)
 {
@@ -16,7 +16,7 @@ int main(int argc, char **argv)
         }
 
         // Create and run the GUI
-        ChessGUI gui(600, 720);
+        ChessGUI gui(600, 710);
 
         // Set the position if a custom FEN was provided
         if (startingFen != chess::STARTPOS)
