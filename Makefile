@@ -1,37 +1,72 @@
-# Chess GUI Makefile
-
-# Compiler & flags
-CC = g++
-CFLAGS = -Wall -O3 -march=native -std=c++20 -Isrc
-LDFLAGS = -lsfml-graphics -lsfml-window -lsfml-audio -lsfml-system
+# Chess Engine Makefile
+# Platform detection
+ifeq ($(OS),Windows_NT)
+    detected_OS := Windows
+    # Windows settings
+    CXX = g++
+    CXXFLAGS = -std=c++20 -O3 -Wall
+    # Add proper Windows DLL export flags
+    CXXFLAGS += -DWIN32 -D_WINDOWS
+    TARGET = chess_engine_wrapper.dll
+    # Add -static to include all MinGW runtime dependencies in the DLL
+    LDFLAGS = -shared -static
+    # On Windows, use del instead of rm
+    RM = del /Q
+else
+    UNAME_S := $(shell uname -s)
+    ifeq ($(UNAME_S),Linux)
+        detected_OS := Linux
+        CXX = g++
+        CXXFLAGS = -std=c++20 -O3 -Wall -fPIC
+        TARGET = chess_engine_wrapper.so
+        LDFLAGS = -shared
+        RM = rm -f
+    endif
+    ifeq ($(UNAME_S),Darwin)
+        detected_OS := macOS
+        CXX = g++
+        CXXFLAGS = -std=c++20 -O3 -Wall -fPIC
+        TARGET = chess_engine_wrapper.dylib
+        LDFLAGS = -shared
+        RM = rm -f
+    endif
+endif
 
 # Source files
-SOURCES = src/gui/ChessGUI.cpp src/main.cpp src/engine/ChessEngine.cpp src/engine/PestoEvaluation.cpp
-OBJECTS = $(SOURCES:.cpp=.o)
-EXECUTABLE = chess-gui
+SRC_DIR = src
+ENGINE_DIR = $(SRC_DIR)/engine
+SRC_FILES = $(SRC_DIR)/ChessEngineWrapper.cpp \
+            $(ENGINE_DIR)/ChessEngine.cpp \
+            $(ENGINE_DIR)/PestoEvaluation.cpp
 
-# Default rule
-all: $(EXECUTABLE)
+# Include directories
+INCLUDES = -I$(SRC_DIR)
 
-# Linking the executable
-$(EXECUTABLE): $(OBJECTS)
-	$(CC) $(OBJECTS) -o $@ $(LDFLAGS)
+# Default target
+all: $(TARGET)
 
-# Generic rule for compiling a source file to an object file
-%.o: %.cpp
-	$(CC) $(CFLAGS) -c $< -o $@
+# Build the chess engine wrapper library
+$(TARGET): $(SRC_FILES)
+	@echo "Building chess engine for $(detected_OS)..."
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $(LDFLAGS) -o $@ $^
+	@echo "Build complete: $@"
 
-# Rule to install SFML if not present
-packages:
-	@if ! dpkg -l | grep libsfml-dev -c >>/dev/null; then \
-		echo "SFML not found. Downloading and installing..."; \
-		sudo apt-get install libsfml-dev; \
-	else \
-		echo "SFML already installed."; \
-	fi
-
-# Clean rule
+# Clean up build artifacts
 clean:
-	rm -f $(OBJECTS) $(EXECUTABLE)
+	@echo "Cleaning up build artifacts..."
+	$(RM) $(TARGET)
 
-.PHONY: all packages setup-assets clean
+# Run the chess game
+run: $(TARGET)
+	python run_game.py
+
+# Help target
+help:
+	@echo "Chess Engine Makefile"
+	@echo "Available targets:"
+	@echo "  all     - Build the chess engine wrapper (default)"
+	@echo "  clean   - Remove build artifacts"
+	@echo "  run     - Build the chess engine wrapper and run the game"
+	@echo "  help    - Display this help message"
+
+.PHONY: all clean run help
