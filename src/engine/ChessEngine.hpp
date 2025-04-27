@@ -3,7 +3,6 @@
 
 #include "../chess.hpp"
 #include "Evaluation.hpp"
-#include "transposition_table.hpp"
 #include "OpeningMove.hpp"
 #include <vector>
 #include <chrono>
@@ -19,16 +18,13 @@ public:
 
     chess::Move getBestMove(chess::Board &board);
 
-    // Initialize the opening book with the specified directory path
     bool initializeOpeningBook();
 
-    // Set the maximum number of moves to use from the opening book
     void setMaxBookMoves(int maxMoves);
 
-    // Enable or disable the opening book
     void enableOpeningBook(bool enable) { useOpeningBook = enable; }
 
-    static constexpr int MAX_DEPTH = 5;
+    static constexpr int MAX_DEPTH = 6;
     static constexpr int TIME_LIMIT = 5;
     static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
 
@@ -36,6 +32,9 @@ private:
     // Constants for searchMoves arrays
     static constexpr int NUM_PLIES = 64;
     static constexpr int NUM_MOVES = 256;
+    OpeningMove openingBook;
+    bool useOpeningBook = true;
+    int moveCounter = 0;
 
     struct SearchStats
     {
@@ -64,17 +63,11 @@ private:
 
     int evaluatePosition(const chess::Board &board);
 
-    void printSearchInfo(const SearchStats &stats, const TTStats &tt_stats);
+    void printSearchInfo(const SearchStats &stats);
 
     Evaluation evaluation;
 
     std::mt19937 rng;
-
-    TranspositionTable tt;
-
-    OpeningMove openingBook;
-    bool useOpeningBook = true;
-    int moveCounter = 0;
 
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 };

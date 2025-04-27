@@ -1,16 +1,9 @@
 #include "ChessEngine.hpp"
-
 #include "See.hpp"
 
-#include <algorithm>
-#include <ctime>
-#include <iomanip>
-
 ChessEngine::ChessEngine()
-    : rng(static_cast<unsigned int>(std::time(nullptr))),
-      tt(64)
+    : rng(std::random_device{}())
 {
-    // Initialize opening book with only Adams.pgn file
     initializeOpeningBook();
 }
 
@@ -27,35 +20,8 @@ void ChessEngine::setMaxBookMoves(int maxMoves)
     openingBook.setMaxBookMoves(maxMoves);
 }
 
-void ChessEngine::printSearchInfo(const SearchStats &stats, const TTStats &tt_stats)
-{
-    float timeInSec = stats.duration.count() / 1000.0f;
-
-    // Calculate nodes per second
-    uint64_t nps = (timeInSec > 0) ? static_cast<uint64_t>(stats.nodes / timeInSec) : 0;
-
-    std::cout << "Depth: " << stats.depth
-              << ", Evaluation: " << stats.score
-              << ", Nodes: " << stats.nodes
-              << ", Time: " << stats.duration.count() << "ms"
-              << ", NPS: " << nps;
-
-    if (stats.bestMove != chess::Move::NULL_MOVE)
-    {
-        std::cout << ", Best move: " << stats.bestMove << std::endl;
-    }
-
-    std::cout << "Transposition Table Stats: "
-              << "Size: " << tt_stats.size << "  "
-              << "Capacity: " << tt_stats.capacity << "  "
-              << "Usage: " << std::fixed << std::setprecision(2) << tt_stats.usage << "%  "
-              << "Hit Rate: " << tt_stats.hit_rate << "%  "
-              << std::endl;
-}
-
 chess::Move ChessEngine::getBestMove(chess::Board &board)
 {
-    // Check opening book first if enabled and we're within the move limit
     if (useOpeningBook)
     {
         chess::Move bookMove = openingBook.getBookMove(board);
@@ -66,120 +32,144 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             return bookMove;
         }
     }
+    // Start timer
+    auto startTime = std::chrono::steady_clock::now();
 
+    // Initialize search statistics
+    SearchStats stats;
+    stats.reset();
+
+    // Initialize best move to invalid
+    chess::Move bestMove = chess::Move::NULL_MOVE;
+
+    // Generate legal moves
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
 
-    if (moves.empty())
-    {
-        return chess::Move::NULL_MOVE;
-    }
-
-    // If only one move is available, return it immediately
+    // If only one move, return immediately
     if (moves.size() == 1)
     {
         moveCounter++;
         return moves[0];
     }
 
-    // For iterative deepening
-    chess::Move bestMove = chess::Move::NULL_MOVE;
-    chess::Move previousBestMove = chess::Move::NULL_MOVE;
-    SearchStats stats;
+    // Handle special case with no legal moves
+    if (moves.empty())
+    {
+        return chess::Move::NULL_MOVE;
+    }
 
-    // Start timing the entire search
-    auto startTime = std::chrono::high_resolution_clock::now();
-    std::chrono::seconds timeLimit(TIME_LIMIT);
+    // Aspiration window values
+    const int ASPIRATION_WINDOW = 50;
+    int previousScore = 0;
 
-    // Iterative deepening - from depth 1 to MAX_DEPTH
+    // Perform iterative deepening
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
-        stats.reset();
         stats.depth = depth;
+        stats.reset();
 
-        // For measuring time at each depth
-        auto depthStartTime = std::chrono::high_resolution_clock::now();
-
-        // Alpha-beta parameters
-        int alpha = std::numeric_limits<int>::min();
-        int beta = std::numeric_limits<int>::max();
-        int bestScore = std::numeric_limits<int>::min();
-
-        // Try each move and evaluate the resulting position
-        for (int i = 0; i < moves.size(); i++)
+        // Set initial alpha-beta bounds
+        // Use aspiration window after first iteration
+        int alpha, beta;
+        if (depth == 1)
         {
-            chess::Move move = moves[i];
-            board.makeMove(move);
+            alpha = -std::numeric_limits<int>::max() + 1;
+            beta = std::numeric_limits<int>::max();
+        }
+        else
+        {
+            alpha = previousScore - ASPIRATION_WINDOW;
+            beta = previousScore + ASPIRATION_WINDOW;
+        }
 
-            uint64_t nodesSearched = 0;
-            int score = -negamax(board, depth - 1, -beta, -alpha, nodesSearched);
-            stats.nodes += nodesSearched;
+        // Perform negamax search
+        uint64_t nodes = 0;
+        int score;
 
-            board.unmakeMove(move);
+        // Main search loop - keep trying with wider windows if needed
+        bool windowFailed = true;
+        while (windowFailed)
+        {
+            score = negamax(board, depth, alpha, beta, nodes);
 
-            if (score > bestScore ||
-                (score == bestScore && std::uniform_int_distribution<>(0, 100)(rng) < 10))
-            { // Small chance to pick equal moves for variety
-                bestScore = score;
-                bestMove = move;
-                alpha = std::max(alpha, bestScore);
+            // Check if search failed low or high
+            if (score <= alpha)
+            {
+                // Failed low, widen window and retry
+                alpha = -std::numeric_limits<int>::max() + 1;
+                windowFailed = true;
+            }
+            else if (score >= beta)
+            {
+                // Failed high, widen window and retry
+                beta = std::numeric_limits<int>::max();
+                windowFailed = true;
+            }
+            else
+            {
+                // Search succeeded within window
+                windowFailed = false;
+                previousScore = score;
             }
 
-            // Check if we've exceeded the time limit
-            auto currentTime = std::chrono::high_resolution_clock::now();
-            auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime);
-            if (elapsedTime >= timeLimit)
+            // Break out if we've widened both bounds
+            if (alpha == -std::numeric_limits<int>::max() + 1 && beta == std::numeric_limits<int>::max())
             {
-                std::cout << "Search time limit exceeded (" << timeLimit.count() << " seconds). Stopping search." << std::endl;
-
-                // Print partial info for this depth
-                auto depthEndTime = std::chrono::high_resolution_clock::now();
-                stats.duration = std::chrono::duration_cast<std::chrono::milliseconds>(depthEndTime - depthStartTime);
-                stats.score = bestScore;
-                stats.bestMove = bestMove;
-
-                auto tt_stats = tt.get_stats();
-
-                printSearchInfo(stats, tt_stats);
-
-                // Print total search time
-                auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(elapsedTime);
-                std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
-
-                moveCounter++;
-                return bestMove != chess::Move::NULL_MOVE ? bestMove : previousBestMove;
+                windowFailed = false;
             }
         }
 
-        // Update stats for this depth
-        auto depthEndTime = std::chrono::high_resolution_clock::now();
-        stats.duration = std::chrono::duration_cast<std::chrono::milliseconds>(depthEndTime - depthStartTime);
-        stats.score = bestScore;
-        stats.bestMove = bestMove;
+        // Store statistics
+        stats.score = score;
+        stats.nodes = nodes;
 
-        auto tt_stats = tt.get_stats();
-
-        // Print info for this depth
-        printSearchInfo(stats, tt_stats);
-
-        // Save the best move from this depth as our current best
-        previousBestMove = bestMove;
-
-        // Check if we've exceeded the time limit after completing a depth
-        auto currentTime = std::chrono::high_resolution_clock::now();
-        auto elapsedTime = std::chrono::duration_cast<std::chrono::seconds>(currentTime - startTime);
-        if (elapsedTime >= timeLimit)
+        // Track best move found at each depth
+        for (const auto &move : moves)
         {
-            std::cout << "Search time limit exceeded (" << timeLimit.count() << " seconds). Stopping search." << std::endl;
+            board.makeMove(move);
+            int moveScore = -negamax(board, depth - 1, -beta, -alpha, nodes);
+            board.unmakeMove(move);
+
+            if (moveScore > alpha)
+            {
+                alpha = moveScore;
+                bestMove = move;
+                stats.bestMove = bestMove;
+            }
+        }
+
+        // Check elapsed time
+        auto currentTime = std::chrono::steady_clock::now();
+        std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+            currentTime - startTime);
+        stats.duration = elapsed;
+
+        // Print search information
+        printSearchInfo(stats);
+
+        // Check if we've exceeded the time limit
+        if (elapsed.count() > TIME_LIMIT * 1000 / 2) // Use half the available time for safety
+        {
             break;
         }
     }
 
-    // Print total search time
-    auto endTime = std::chrono::high_resolution_clock::now();
-    auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-    std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
-    std::cout << "----------------------------------------------" << std::endl;
+    // If still no valid move found (unlikely), pick a random legal move
+    if (bestMove == chess::Move::NULL_MOVE && !moves.empty())
+    {
+        std::uniform_int_distribution<size_t> dist(0, moves.size() - 1);
+        bestMove = moves[dist(rng)];
+    }
+
+    // Calculate total time taken
+    auto endTime = std::chrono::steady_clock::now();
+    auto totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    // Print total time and best move chosen
+    std::cout << "\nSearch completed in " << totalTime << "ms" << std::endl;
+    std::cout << "Best move: " << chess::uci::moveToUci(bestMove) << std::endl;
+    std::cout << "---------------------------------------------------------" << std::endl;
 
     moveCounter++;
     return bestMove;
@@ -187,161 +177,163 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
 
 int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes)
 {
-    nodes++;
+    nodes++; // Increment node counter
 
-    uint64_t hash_key = board.hash();
-    auto [hit, tt_score] = tt.lookup(hash_key, depth, alpha, beta);
-    if (hit)
+    // Check for immediate draw conditions
+    if (board.isInsufficientMaterial() || board.isRepetition(2) || board.isHalfMoveDraw())
     {
-        return tt_score;
-    }
-    // Base case: reached leaf node or terminal position
-    if (depth == 0)
-    {
-        int score = quiesence(board, alpha, beta, nodes);
-        tt.store(hash_key, score, TTFlag::EXACT_SCORE, depth);
-        return score;
+        return 0; // Draw
     }
 
-    // Check for draw by repetition or fifty-move rule
-    if (board.isRepetition() || board.isHalfMoveDraw())
+    // Base case: leaf node (evaluate position or use quiescence search)
+    if (depth <= 0)
     {
-        tt.store(hash_key, 0, TTFlag::EXACT_SCORE, depth);
-        return 0; // Draw evaluation is 0
+        return quiesence(board, alpha, beta, nodes);
     }
 
     // Generate legal moves
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
 
-    // Check for checkmate or stalemate
+    // Check for checkmate/stalemate
     if (moves.empty())
     {
         if (board.inCheck())
         {
-            // Checkmate: return worst possible score, adjusted for depth
-            // We add depth to prefer shorter paths to mate
-            return -30000 + depth;
+            return -std::numeric_limits<int>::max() + 1; // Checkmate, with distance-to-mate adjustment
         }
         else
         {
-            // Stalemate: return draw score
-            return 0;
+            return 0; // Stalemate
         }
     }
 
-    int original_alpha = alpha;
+    // Order moves for better pruning
+    orderMoves(board, moves);
+
+    int bestScore = -std::numeric_limits<int>::max();
+
+    // Iterate through each move
     for (int i = 0; i < moves.size(); i++)
     {
-        chess::Move &move = moves[i];
-        int score = 0;
+        chess::Move move = moves[i];
 
-        if (board.isCapture(move))
-        {
-            score = 10000;
-        }
+        // Late Move Reduction
+        bool isReduced = false;
+        bool isCapture = board.at(move.to()) != chess::Piece::NONE;
+        bool isPromotion = move.typeOf() == chess::Move::PROMOTION;
+        bool givesCheck = false;
 
-        move.setScore(score);
-    }
-
-    // Sort the moves by score in descending order
-    moves.sort();
-
-    int bestScore = -30001; // Worst possible score
-
-    // Try each move and recursively evaluate the resulting position
-    for (const auto &move : moves)
-    {
-        // Make the move on the board
+        // Make the move
         board.makeMove(move);
 
-        // Recursive call with negated bounds (negamax)
-        int score = -negamax(board, depth - 1, -beta, -alpha, nodes);
+        // Check if this move gives check
+        givesCheck = board.inCheck();
 
-        // Unmake the move to restore the board
+        // Late move reduction for quiet moves after we've searched several moves
+        int newDepth = depth - 1;
+
+        // Perform late move reduction for quiet moves after first few moves
+        if (depth >= 3 && i >= 4 && !isCapture && !isPromotion && !givesCheck)
+        {
+            isReduced = true;
+            newDepth = depth - 2; // Reduce search depth
+        }
+
+        // Recursive negamax call with negated bounds
+        int score;
+
+        // If reduced search, do a null-window search first
+        if (isReduced)
+        {
+            score = -negamax(board, newDepth, -alpha - 1, -alpha, nodes);
+
+            // If the reduced search returns a promising score, search again with full depth
+            if (score > alpha)
+            {
+                score = -negamax(board, depth - 1, -beta, -alpha, nodes);
+            }
+        }
+        else
+        {
+            // Full-window search for promising moves
+            score = -negamax(board, newDepth, -beta, -alpha, nodes);
+        }
+
+        // Undo the move
         board.unmakeMove(move);
 
         // Update best score
-        bestScore = std::max(bestScore, score);
+        if (score > bestScore)
+        {
+            bestScore = score;
+        }
 
         // Alpha-beta pruning
-        alpha = std::max(alpha, score);
-        if (alpha >= beta)
+        if (score > alpha)
         {
-            // Beta cutoff - the opponent won't allow this position
-            break;
+            alpha = score;
+
+            // If we found a move that's too good, no need to search further
+            if (alpha >= beta)
+            {
+                return beta; // Beta cutoff (fail-high)
+            }
         }
     }
 
-    TTFlag flag;
-    if (bestScore <= original_alpha)
-    {
-        flag = TTFlag::UPPER_BOUND;
-    }
-    else if (bestScore >= beta)
-    {
-        flag = TTFlag::LOWER_BOUND;
-    }
-    else
-    {
-        flag = TTFlag::EXACT_SCORE;
-    }
-
-    tt.store(hash_key, bestScore, flag, depth);
     return bestScore;
 }
 
-int ChessEngine::quiesence(chess::Board &board, int alpha, int beta,
-                           uint64_t &nodes)
+int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes)
 {
-    nodes++;
+    nodes++; // Increment node counter
 
-    // Evaluate the current position
-    int stand_pat = evaluation.evaluate(board);
+    // Stand pat (evaluate current position)
+    int standPat = evaluatePosition(board);
 
-    // If the static evaluation is already worse than beta, prune this branch
-    if (stand_pat >= beta)
-    {
+    // Check if current position is already better than beta
+    if (standPat >= beta)
         return beta;
-    }
 
-    // Update alpha if the static evaluation is better
-    if (stand_pat > alpha)
-    {
-        alpha = stand_pat;
-    }
+    // Update alpha if stand-pat score is better
+    if (standPat > alpha)
+        alpha = standPat;
 
-    // Generate all capture moves
+    // Generate only capture moves
     chess::Movelist moves;
     chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
-    orderMoves(board, moves);
-    for (int i = 0; i < moves.size(); i++)
-    {
-        // Make the move
-        board.makeMove(moves[i]);
 
-        if (moves[i].score() < GOOD_CAPTURE_WEIGHT && !board.inCheck())
+    // Score and sort capture moves
+    for (auto &move : moves)
+    {
+        scoreMoves(board, move);
+    }
+    moves.sort();
+
+    // Iterate through captures
+    for (const auto &move : moves)
+    {
+        // Static Exchange Evaluation (SEE) pruning for bad captures
+        if (!SEE::isGoodCapture(move, board, -20))
         {
-            board.unmakeMove(moves[i]);
-            continue;
+            continue; // Skip capturing moves that lose material
         }
 
-        // Perform a recursive quiescence search
+        board.makeMove(move);
+
+        // Recursive quiescence search
         int score = -quiesence(board, -beta, -alpha, nodes);
 
-        // Undo the move
-        board.unmakeMove(moves[i]);
+        board.unmakeMove(move);
+
+        // Beta cutoff
+        if (score >= beta)
+            return beta;
 
         // Update alpha
         if (score > alpha)
-        {
-            // Beta cutoff
-            if (score >= beta)
-            {
-                return beta;
-            }
             alpha = score;
-        }
     }
 
     return alpha;
@@ -349,38 +341,74 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta,
 
 void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves)
 {
-    for (chess::Move &move : moves)
+    // Score each move using heuristics
+    for (auto &move : moves)
+    {
         scoreMoves(board, move);
+    }
+
+    // Sort moves by score (highest first)
     moves.sort();
 }
 
 void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
 {
-    // PV move
+    int score = 0;
 
-    int16_t score = 0;
-    int from = (int)board.at(move.from());
-    int to = (int)board.at(move.to());
-    if (board.isCapture(move))
+    // Score captures based on MVV-LVA (Most Valuable Victim, Least Valuable Aggressor)
+    if (board.at(move.to()) != chess::Piece::NONE)
     {
-        score += abs(SEE::PIECE_VALUES[to]) - (from % 6); // MVV/LVA
-        score += SEE::isGoodCapture(move, board, -12) *
-                 ChessEngine::GOOD_CAPTURE_WEIGHT;
-    }
-    else
-    {
-        // killer and history
-        score += 0;
+        // Get piece types
+        chess::PieceType captured = chess::utils::typeOfPiece(board.at(move.to()));
+        chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
+
+        // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
+        score = 6 * static_cast<int>(captured) - static_cast<int>(attacker) + 10;
+
+        // Add bonus for good captures based on SEE
+        if (SEE::isGoodCapture(move, board, 0))
+        {
+            score += GOOD_CAPTURE_WEIGHT;
+        }
     }
 
+    // Score promotions
     if (move.typeOf() == chess::Move::PROMOTION)
-        score += abs(SEE::PIECE_VALUES[(int)move.promotionType()]);
+    {
+        // Higher score for queen promotions
+        if (move.promotionType() == chess::PieceType::QUEEN)
+            score += 900;
+        else if (move.promotionType() == chess::PieceType::ROOK)
+            score += 500;
+        else if (move.promotionType() == chess::PieceType::BISHOP ||
+                 move.promotionType() == chess::PieceType::KNIGHT)
+            score += 300;
+    }
+
+    // We could add more scoring factors here:
+    // - Killer moves (quiet moves that caused beta cutoffs at the same depth)
+    // - History heuristic (for quiet moves)
 
     move.setScore(score);
 }
 
 int ChessEngine::evaluatePosition(const chess::Board &board)
 {
-    // Use our evaluation function
-    return evaluation.evaluate(board);
+    // The board evaluation is delegated to the Evaluation class
+    int score = evaluation.evaluate(board);
+    return score;
+}
+
+void ChessEngine::printSearchInfo(const SearchStats &stats)
+{
+    auto timeInMs = stats.duration.count();
+    uint64_t nps = timeInMs > 0 ? (stats.nodes * 1000) / timeInMs : 0;
+
+    std::cout << "Depth: " << stats.depth
+              << ", Score: " << stats.score
+              << ", Nodes: " << stats.nodes
+              << ", Time: " << timeInMs
+              << ", NPS: " << nps
+              << ", Best Move: " << stats.bestMove
+              << std::endl;
 }
