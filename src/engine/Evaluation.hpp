@@ -12,8 +12,13 @@ public:
     int evaluate(const chess::Board &board) const;
 
 private:
+    // Material values (in centipawns)
     static constexpr std::array<int, 6> PIECE_VALUES = {100, 320, 330, 500, 900, 20000};
 
+    // Mobility bonuses per piece type (Knight, Bishop, Rook, Queen)
+    static constexpr std::array<int, 4> MOBILITY_BONUS = {4, 5, 3, 2};
+
+    // Piece-Square Tables
     static constexpr std::array<int, 64> PAWN_PST = {
         0, 0, 0, 0, 0, 0, 0, 0,
         50, 50, 50, 50, 50, 50, 50, 50,
@@ -84,17 +89,34 @@ private:
         -30, -30, 0, 0, 0, 0, -30, -30,
         -50, -30, -30, -30, -30, -30, -30, -50};
 
-    // Helper methods for evaluation
-    int evaluateMaterial(const chess::Board &board) const;
-    int evaluatePosition(const chess::Board &board, bool isEndgame) const;
-    int evaluatePawnStructure(const chess::Board &board) const;
-    bool isEndgame(const chess::Board &board) const;
+    // King safety shield pattern for pawns in front of king
+    static constexpr std::array<int, 8> KING_SHIELD_BONUS = {0, 10, 20, 6, 2, 0, 0, 0};
 
-    // Mirror index for black pieces (to flip piece-square tables)
+    // Evaluation methods
+    int evaluateMaterial(const chess::Board &board) const;
+    int evaluatePosition(const chess::Board &board, int gamePhaseScore) const;
+    int evaluatePawnStructure(const chess::Board &board) const;
+    int evaluateMobility(const chess::Board &board) const;
+    int evaluateKingSafety(const chess::Board &board, int gamePhaseScore) const;
+    int evaluateThreats(const chess::Board &board) const;
+    int evaluatePieceCoordination(const chess::Board &board) const;
+    bool isEndgame(const chess::Board &board) const;
+    int calculateGamePhase(const chess::Board &board) const;
+
+    // Helper methods
     int mirrorSquare(int square) const
     {
         return square ^ 56;
     }
+
+    bool isOpenFile(const chess::Board &board, int file) const;
+    bool isSemiOpenFile(const chess::Board &board, int file, chess::Color color) const;
+    int countPawnShield(const chess::Board &board, int kingSq, chess::Color color) const;
+    int getDistance(int sq1, int sq2) const;
+    bool isPassed(const chess::Board &board, int sq, chess::Color color) const;
+    bool isIsolated(const chess::Board &board, int sq, chess::Color color) const;
+    bool isDoubled(const chess::Board &board, int sq, chess::Color color) const;
+    bool isConnected(const chess::Board &board, int sq, chess::Color color) const;
 };
 
 #endif // EVALUATION_HPP
