@@ -10,9 +10,8 @@ public:
     Evaluation() = default;
 
     int evaluate(const chess::Board &board) const;
-
-private:
     static constexpr std::array<int, 6> PIECE_VALUES = {100, 320, 330, 500, 900, 20000};
+private:
 
     static constexpr std::array<int, 64> PAWN_PST = {
         0, 0, 0, 0, 0, 0, 0, 0,

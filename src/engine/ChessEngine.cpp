@@ -1,7 +1,10 @@
 #include "ChessEngine.hpp"
+
+#include "See.hpp"
+
 #include <algorithm>
-#include <iomanip>
 #include <ctime>
+#include <iomanip>
 
 ChessEngine::ChessEngine() : rng(static_cast<unsigned int>(std::time(nullptr)))
 {
@@ -145,7 +148,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     // Base case: if we reached the bottom of the search, evaluate the position
     if (depth == 0)
     {
-        return quiesence(board, alpha, beta, nodes);
+        return evaluatePosition(board);
     }
 
     // Check for draw by repetition or fifty-move rule
@@ -222,56 +225,81 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 }
 
 int ChessEngine::quiesence(chess::Board &board, int alpha, int beta,
-    uint64_t &nodes) {
-    nodes++;
+                           uint64_t &nodes) {
+  nodes++;
 
-    // Evaluate the current position
-    int stand_pat = pestoEval.evaluate(board);
+  // Evaluate the current position
+  int stand_pat = evaluation.evaluate(board);
 
-    // If the static evaluation is already worse than beta, prune this branch
-    if (stand_pat >= beta) {
-      return beta;
-    }
+  // If the static evaluation is already worse than beta, prune this branch
+  if (stand_pat >= beta) {
+    return beta;
+  }
 
-    // Update alpha if the static evaluation is better
-    if (stand_pat > alpha) {
-      alpha = stand_pat;
-    }
+  // Update alpha if the static evaluation is better
+  if (stand_pat > alpha) {
+    alpha = stand_pat;
+  }
 
-    // Generate all capture moves
-    chess::Movelist moves;
-    chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
-    //MVV-LVA
-    for (auto &move : moves) {
-      auto victim = board.at(move.to());
-      auto attacker = board.at(move.from());
-      auto victim_type = chess::utils::typeOfPiece(victim);
-      auto attacker_type = chess::utils::typeOfPiece(attacker);
-      move.setScore(pestoEval.mg_value[pestoEval.pieceTypeToIndex(victim_type)] * 10 +
-               (9 - pestoEval.mg_value[pestoEval.pieceTypeToIndex(attacker_type)]));
-    }
-    moves.sort();
-    for (int i = 0; i < moves.size(); i++) {
-      // Make the move
-      board.makeMove(moves[i]);
+  // Generate all capture moves
+  chess::Movelist moves;
+  chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
+  orderMoves(board, moves);
+  for (int i = 0; i < moves.size(); i++) {
+    // Make the move
+    board.makeMove(moves[i]);
 
-      // Perform a recursive quiescence search
-      int score = -quiesence(board, -beta, -alpha, nodes);
-
-      // Undo the move
+    if (moves[i].score()<GOOD_CAPTURE_WEIGHT && !board.inCheck()) {
       board.unmakeMove(moves[i]);
-
-      // Update alpha
-      if (score > alpha) {
-        // Beta cutoff
-        if (score >= beta) {
-          return beta;
-        }
-        alpha = score;
-      }
+      continue;
     }
 
-    return alpha;
+    // Perform a recursive quiescence search
+    int score = -quiesence(board, -beta, -alpha, nodes);
+
+    // Undo the move
+    board.unmakeMove(moves[i]);
+
+    // Update alpha
+    if (score > alpha) {
+      // Beta cutoff
+      if (score >= beta) {
+        return beta;
+      }
+      alpha = score;
+    }
+  }
+
+  return alpha;
+}
+
+void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves)
+{
+    for (chess::Move &move : moves)
+        scoreMoves(board, move);
+    moves.sort();
+}
+
+void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
+{
+    //PV move
+
+    int16_t score = 0;
+    int from = (int)board.at(move.from());
+    int to = (int)board.at(move.to());
+    if (board.isCapture(move)) {
+        score += abs(SEE::PIECE_VALUES[to]) - (from%6);    // MVV/LVA
+        score += SEE::isGoodCapture(move, board, -12) *
+                                            ChessEngine::GOOD_CAPTURE_WEIGHT;
+    } else {
+        //killer and history
+        score += 0;
+    }
+
+    if (move.typeOf() == chess::Move::PROMOTION)
+        score += abs(SEE::PIECE_VALUES[(int)move.promotionType()]);
+
+    move.setScore(score);
 }
 
 int ChessEngine::evaluatePosition(const chess::Board &board)

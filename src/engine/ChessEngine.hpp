@@ -18,8 +18,8 @@ public:
     chess::Move getBestMove(chess::Board &board);
 
     static constexpr int MAX_DEPTH = 5;
-
     static constexpr int TIME_LIMIT = 5;
+    static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
 
 private:
     // Constants for searchMoves arrays
@@ -47,6 +47,9 @@ private:
 
     int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes);
 
+    void orderMoves(chess::Board &board, chess::Movelist &moves);
+
+    void scoreMoves(const chess::Board &board, chess::Move &move);
 
     int evaluatePosition(const chess::Board &board);
 
