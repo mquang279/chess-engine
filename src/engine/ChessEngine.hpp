@@ -3,6 +3,7 @@
 
 #include "../chess.hpp"
 #include "Evaluation.hpp"
+#include "transposition_table.hpp"
 #include <vector>
 #include <chrono>
 #include <iostream>
@@ -53,11 +54,13 @@ private:
 
     int evaluatePosition(const chess::Board &board);
 
-    void printSearchInfo(const SearchStats &stats);
+    void printSearchInfo(const SearchStats &stats, const TTStats &tt_stats);
 
     Evaluation evaluation;
 
     std::mt19937 rng;
+
+    TranspositionTable tt;
 
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 };

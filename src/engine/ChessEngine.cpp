@@ -6,12 +6,13 @@
 #include <ctime>
 #include <iomanip>
 
-ChessEngine::ChessEngine() : rng(static_cast<unsigned int>(std::time(nullptr)))
+ChessEngine::ChessEngine()
+    : rng(static_cast<unsigned int>(std::time(nullptr))),
+      tt(64)
 {
-    // Initialize random number generator with current time
 }
 
-void ChessEngine::printSearchInfo(const SearchStats &stats)
+void ChessEngine::printSearchInfo(const SearchStats &stats, const TTStats &tt_stats)
 {
     float timeInSec = stats.duration.count() / 1000.0f;
 
@@ -28,6 +29,13 @@ void ChessEngine::printSearchInfo(const SearchStats &stats)
     {
         std::cout << ", Best move: " << stats.bestMove << std::endl;
     }
+
+    std::cout << "Transposition Table Stats: "
+              << "Size: " << tt_stats.size << "  "
+              << "Capacity: " << tt_stats.capacity << "  "
+              << "Usage: " << std::fixed << std::setprecision(2) << tt_stats.usage << "%  "
+              << "Hit Rate: " << tt_stats.hit_rate << "%  "
+              << std::endl;
 }
 
 chess::Move ChessEngine::getBestMove(chess::Board &board)
@@ -101,7 +109,10 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
                 stats.duration = std::chrono::duration_cast<std::chrono::milliseconds>(depthEndTime - depthStartTime);
                 stats.score = bestScore;
                 stats.bestMove = bestMove;
-                printSearchInfo(stats);
+
+                auto tt_stats = tt.get_stats();
+
+                printSearchInfo(stats, tt_stats);
 
                 // Print total search time
                 auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(elapsedTime);
@@ -117,8 +128,10 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         stats.score = bestScore;
         stats.bestMove = bestMove;
 
+        auto tt_stats = tt.get_stats();
+
         // Print info for this depth
-        printSearchInfo(stats);
+        printSearchInfo(stats, tt_stats);
 
         // Save the best move from this depth as our current best
         previousBestMove = bestMove;
@@ -145,15 +158,24 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 {
     nodes++;
 
-    // Base case: if we reached the bottom of the search, evaluate the position
+    uint64_t hash_key = board.hash();
+    auto [hit, tt_score] = tt.lookup(hash_key, depth, alpha, beta);
+    if (hit)
+    {
+        return tt_score;
+    }
+    // Base case: reached leaf node or terminal position
     if (depth == 0)
     {
-        return quiesence(board, alpha, beta, nodes);
+        int score = quiesence(board, alpha, beta, nodes);
+        tt.store(hash_key, score, TTFlag::EXACT_SCORE, depth);
+        return score;
     }
 
     // Check for draw by repetition or fifty-move rule
     if (board.isRepetition() || board.isHalfMoveDraw())
     {
+        tt.store(hash_key, 0, TTFlag::EXACT_SCORE, depth);
         return 0; // Draw evaluation is 0
     }
 
@@ -177,9 +199,8 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
         }
     }
 
-    // Simple move ordering: captures first
-    // This significantly improves alpha-beta pruning
-    for (int i = 0; i < moves.size(); ++i)
+    int original_alpha = alpha;
+    for (int i = 0; i < moves.size(); i++)
     {
         chess::Move &move = moves[i];
         int score = 0;
@@ -221,6 +242,21 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
         }
     }
 
+    TTFlag flag;
+    if (bestScore <= original_alpha)
+    {
+        flag = TTFlag::UPPER_BOUND;
+    }
+    else if (bestScore >= beta)
+    {
+        flag = TTFlag::LOWER_BOUND;
+    }
+    else
+    {
+        flag = TTFlag::EXACT_SCORE;
+    }
+
+    tt.store(hash_key, bestScore, flag, depth);
     return bestScore;
 }
 
