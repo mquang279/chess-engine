@@ -2,12 +2,12 @@
 #define CHESS_ENGINE_HPP
 
 #include "../chess.hpp"
-#include "PestoEvaluation.hpp"
+#include "Evaluation.hpp"
 #include <vector>
-#include <map>
-#include <random>
 #include <chrono>
 #include <iostream>
+#include <limits>
+#include <random>
 
 class ChessEngine
 {
@@ -15,12 +15,11 @@ public:
     ChessEngine();
     ~ChessEngine() = default;
 
-    // Get the best move for the current position
     chess::Move getBestMove(chess::Board &board);
 
-    // Maximum search depth
-    const int MAX_DEPTH = 6;
-    const int TIME_LIMIT = 10;
+    static constexpr int MAX_DEPTH = 5;
+
+    static constexpr int TIME_LIMIT = 5;
 
 private:
     struct SearchStats
@@ -45,9 +44,8 @@ private:
 
     void printSearchInfo(const SearchStats &stats);
 
-    PestoEvaluation pestoEval;
+    Evaluation evaluation;
 
-    // Random number generator for breaking ties or adding some randomness
     std::mt19937 rng;
 };
 
