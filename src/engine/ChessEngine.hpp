@@ -3,6 +3,7 @@
 
 #include "../chess.hpp"
 #include "PestoEvaluation.hpp"
+#include "transposition_table.hpp"
 #include <vector>
 #include <map>
 #include <random>
@@ -49,6 +50,8 @@ private:
 
     // Random number generator for breaking ties or adding some randomness
     std::mt19937 rng;
+    
+    TranspositionTable tt;
 };
 
 #endif // CHESS_ENGINE_HPP

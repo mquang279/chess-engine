@@ -5,9 +5,10 @@
 #include <iomanip>
 #include <sstream>
 
-ChessEngine::ChessEngine() : rng(static_cast<unsigned int>(std::time(nullptr)))
-{
-}
+ChessEngine::ChessEngine()
+    : rng(static_cast<unsigned int>(std::time(nullptr))),
+      tt(64)
+{}
 
 void ChessEngine::printSearchInfo(const SearchStats &stats)
 {
@@ -104,6 +105,16 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
                 auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(elapsedTime);
                 std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
 
+                // Print transposition table stats
+                auto tt_stats = tt.get_stats();
+                std::cout << "Transposition Table Stats: "
+                        << "Size: " << tt_stats.size << "  "
+                        << "Capacity: " << tt_stats.capacity << "  "
+                        << "Usage: " << std::fixed << std::setprecision(2) << tt_stats.usage << "%  "
+                        << "Hit Rate: " << tt_stats.hit_rate << "%  "
+                        << "\n";
+
+
                 return bestMove != chess::Move::NULL_MOVE ? bestMove : previousBestMove;
             }
         }
@@ -142,10 +153,17 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 {
     nodes++;
 
+    uint64_t hash_key = board.hash();
+    auto [hit, tt_score] = tt.lookup(hash_key, depth, alpha, beta);
+    if (hit) {
+        return tt_score;
+    }
     // Base case: reached leaf node or terminal position
     if (depth == 0 || board.isGameOver().first != chess::GameResultReason::NONE)
     {
-        return evaluatePosition(board);
+        int score = evaluatePosition(board);
+        tt.store(hash_key, score, TTFlag::EXACT_SCORE, depth);
+        return score;
     }
 
     chess::Movelist moves;
@@ -166,6 +184,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     }
 
     int bestScore = std::numeric_limits<int>::min();
+    int original_alpha = alpha;
 
     for (int i = 0; i < moves.size(); i++)
     {
@@ -185,6 +204,16 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
         }
     }
 
+    TTFlag flag;
+    if (bestScore <= original_alpha) {
+        flag = TTFlag::UPPER_BOUND;
+    } else if (bestScore >= beta) {
+        flag = TTFlag::LOWER_BOUND;
+    } else {
+        flag = TTFlag::EXACT_SCORE;
+    }
+
+    tt.store(hash_key, bestScore, flag, depth);
     return bestScore;
 }
 
