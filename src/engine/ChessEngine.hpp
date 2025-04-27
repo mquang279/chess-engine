@@ -4,6 +4,7 @@
 #include "../chess.hpp"
 #include "Evaluation.hpp"
 #include "transposition_table.hpp"
+#include "OpeningMove.hpp"
 #include <vector>
 #include <chrono>
 #include <iostream>
@@ -17,6 +18,15 @@ public:
     ~ChessEngine() = default;
 
     chess::Move getBestMove(chess::Board &board);
+
+    // Initialize the opening book with the specified directory path
+    bool initializeOpeningBook();
+
+    // Set the maximum number of moves to use from the opening book
+    void setMaxBookMoves(int maxMoves);
+
+    // Enable or disable the opening book
+    void enableOpeningBook(bool enable) { useOpeningBook = enable; }
 
     static constexpr int MAX_DEPTH = 5;
     static constexpr int TIME_LIMIT = 5;
@@ -61,6 +71,10 @@ private:
     std::mt19937 rng;
 
     TranspositionTable tt;
+
+    OpeningMove openingBook;
+    bool useOpeningBook = true;
+    int moveCounter = 0;
 
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 };

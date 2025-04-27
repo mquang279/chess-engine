@@ -38,7 +38,8 @@ ENGINE_DIR = $(SRC_DIR)/engine
 SRC_FILES = $(SRC_DIR)/ChessEngineWrapper.cpp \
             $(ENGINE_DIR)/ChessEngine.cpp \
             $(ENGINE_DIR)/Evaluation.cpp \
-            $(ENGINE_DIR)/transposition_table.cpp 
+            $(ENGINE_DIR)/transposition_table.cpp \
+            $(ENGINE_DIR)/OpeningMove.cpp
 
 # Include directories
 INCLUDES = -I$(SRC_DIR)

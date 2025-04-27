@@ -10,6 +10,21 @@ ChessEngine::ChessEngine()
     : rng(static_cast<unsigned int>(std::time(nullptr))),
       tt(64)
 {
+    // Initialize opening book with only Adams.pgn file
+    initializeOpeningBook();
+}
+
+bool ChessEngine::initializeOpeningBook()
+{
+    // Use only Adams.pgn for opening book
+    std::string path = "assets/opening/Adams.pgn";
+    std::cout << "Initializing opening book!!!" << std::endl;
+    return openingBook.initializeFromFile(path);
+}
+
+void ChessEngine::setMaxBookMoves(int maxMoves)
+{
+    openingBook.setMaxBookMoves(maxMoves);
 }
 
 void ChessEngine::printSearchInfo(const SearchStats &stats, const TTStats &tt_stats)
@@ -40,6 +55,18 @@ void ChessEngine::printSearchInfo(const SearchStats &stats, const TTStats &tt_st
 
 chess::Move ChessEngine::getBestMove(chess::Board &board)
 {
+    // Check opening book first if enabled and we're within the move limit
+    if (useOpeningBook)
+    {
+        chess::Move bookMove = openingBook.getBookMove(board);
+        if (bookMove != chess::Move::NULL_MOVE)
+        {
+            std::cout << "Using opening book move: " << bookMove << std::endl;
+            moveCounter++;
+            return bookMove;
+        }
+    }
+
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
 
@@ -51,6 +78,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
     // If only one move is available, return it immediately
     if (moves.size() == 1)
     {
+        moveCounter++;
         return moves[0];
     }
 
@@ -118,6 +146,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
                 auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(elapsedTime);
                 std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
 
+                moveCounter++;
                 return bestMove != chess::Move::NULL_MOVE ? bestMove : previousBestMove;
             }
         }
@@ -151,6 +180,8 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
     auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
     std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
     std::cout << "----------------------------------------------" << std::endl;
+
+    moveCounter++;
     return bestMove;
 }
 
