@@ -1,1065 +1,413 @@
 #include "Evaluation.hpp"
+#define whiteturn (board.sideToMove() == chess::Color::WHITE)
+#define lighttile(sqi) (((sq >> 3) ^ sq) & 1)
+
+void Evaluation::initPST()
+{
+    constexpr int PAWN_MID[64] = {
+        0, 0, 0, 0, 0, 0, 0, 0,              //
+        98, 134, 61, 95, 68, 126, 34, -11,   //
+        -6, 7, 26, 31, 65, 56, 25, -20,      //
+        -14, 13, 6, 21, 23, 12, 17, -23,     //
+        -27, -2, -5, 12, 17, 6, 10, -25,     //
+        -26, -4, -4, -10, 3, 3, 33, -12,     //
+        -35, -1, -20, -23, -15, 24, 38, -22, //
+        0, 0, 0, 0, 0, 0, 0, 0,              //
+    };
+    constexpr int PAWN_END[64] = {
+        0, 0, 0, 0, 0, 0, 0, 0,                 //
+        178, 173, 158, 134, 147, 132, 165, 187, //
+        94, 100, 85, 67, 56, 53, 82, 84,        //
+        32, 24, 13, 5, -2, 4, 17, 17,           //
+        13, 9, -3, -7, -7, -8, 3, -1,           //
+        4, 7, -6, 1, 0, -5, -1, -8,             //
+        13, 8, 8, 10, 13, 0, 2, -7,             //
+        0, 0, 0, 0, 0, 0, 0, 0,                 //
+    };
+    constexpr int KNIGHT_MID[64] = {
+        -167, -89, -34, -49, 61, -97, -15, -107, //
+        -73, -41, 72, 36, 23, 62, 7, -17,        //
+        -47, 60, 37, 65, 84, 129, 73, 44,        //
+        -9, 17, 19, 53, 37, 69, 18, 22,          //
+        -13, 4, 16, 13, 28, 19, 21, -8,          //
+        -23, -9, 12, 10, 19, 17, 25, -16,        //
+        -29, -53, -12, -3, -1, 18, -14, -19,     //
+        -105, -21, -58, -33, -17, -28, -19, -23, //
+    };
+    constexpr int KNIGHT_END[64] = {
+        -58, -38, -13, -28, -31, -27, -63, -99, //
+        -25, -8, -25, -2, -9, -25, -24, -52,    //
+        -24, -20, 10, 9, -1, -9, -19, -41,      //
+        -17, 3, 22, 22, 22, 11, 8, -18,         //
+        -18, -6, 16, 25, 16, 17, 4, -18,        //
+        -23, -3, -1, 15, 10, -3, -20, -22,      //
+        -42, -20, -10, -5, -2, -20, -23, -44,   //
+        -29, -51, -23, -15, -22, -18, -50, -64, //
+    };
+    constexpr int BISHOP_MID[64] = {
+        -29, 4, -82, -37, -25, -42, 7, -8,     //
+        -26, 16, -18, -13, 30, 59, 18, -47,    //
+        -16, 37, 43, 40, 35, 50, 37, -2,       //
+        -4, 5, 19, 50, 37, 37, 7, -2,          //
+        -6, 13, 13, 26, 34, 12, 10, 4,         //
+        0, 15, 15, 15, 14, 27, 18, 10,         //
+        4, 15, 16, 0, 7, 21, 33, 1,            //
+        -33, -3, -14, -21, -13, -12, -39, -21, //
+    };
+    constexpr int BISHOP_END[64] = {
+        -14, -21, -11, -8, -7, -9, -17, -24, //
+        -8, -4, 7, -12, -3, -13, -4, -14,    //
+        2, -8, 0, -1, -2, 6, 0, 4,           //
+        -3, 9, 12, 9, 14, 10, 3, 2,          //
+        -6, 3, 13, 19, 7, 10, -3, -9,        //
+        -12, -3, 8, 10, 13, 3, -7, -15,      //
+        -14, -18, -7, -1, 4, -9, -15, -27,   //
+        -23, -9, -23, -5, -9, -16, -5, -17,  //
+    };
+    constexpr int ROOK_MID[64] = {
+        32, 42, 32, 51, 63, 9, 31, 43,      //
+        27, 32, 58, 62, 80, 67, 26, 44,     //
+        -5, 19, 26, 36, 17, 45, 61, 16,     //
+        -24, -11, 7, 26, 24, 35, -8, -20,   //
+        -36, -26, -12, -1, 9, -7, 6, -23,   //
+        -45, -25, -16, -17, 3, 0, -5, -33,  //
+        -44, -16, -20, -9, -1, 11, -6, -71, //
+        -19, -13, 1, 17, 16, 7, -37, -26,   //
+    };
+    constexpr int ROOK_END[64] = {
+        13, 10, 18, 15, 12, 12, 8, 5,    //
+        11, 13, 13, 11, -3, 3, 8, 3,     //
+        7, 7, 7, 5, 4, -3, -5, -3,       //
+        4, 3, 13, 1, 2, 1, -1, 2,        //
+        3, 5, 8, 4, -5, -6, -8, -11,     //
+        -4, 0, -5, -1, -7, -12, -8, -16, //
+        -6, -6, 0, 2, -9, -9, -11, -3,   //
+        -9, 2, 3, -1, -5, -13, 4, -20,   //
+    };
+    constexpr int QUEEN_MID[64] = {
+        -28, 0, 29, 12, 59, 44, 43, 45,      //
+        -24, -39, -5, 1, -16, 57, 28, 54,    //
+        -13, -17, 7, 8, 29, 56, 47, 57,      //
+        -27, -27, -16, -16, -1, 17, -2, 1,   //
+        -9, -26, -9, -10, -2, -4, 3, -3,     //
+        -14, 2, -11, -2, -5, 2, 14, 5,       //
+        -35, -8, 11, 2, 8, 15, -3, 1,        //
+        -1, -18, -9, 10, -15, -25, -31, -50, //
+    };
+    constexpr int QUEEN_END[64] = {
+        -9, 22, 22, 27, 27, 19, 10, 20,         //
+        -17, 20, 32, 41, 58, 25, 30, 0,         //
+        -20, 6, 9, 49, 47, 35, 19, 9,           //
+        3, 22, 24, 45, 57, 40, 57, 36,          //
+        -18, 28, 19, 47, 31, 34, 39, 23,        //
+        -16, -27, 15, 6, 9, 17, 10, 5,          //
+        -22, -23, -30, -16, -16, -23, -36, -32, //
+        -33, -28, -22, -43, -5, -32, -20, -41,  //
+    };
+    constexpr int KING_MID[64] = {
+        -65, 23, 16, -15, -56, -34, 2, 13,      //
+        29, -1, -20, -7, -8, -4, -38, -29,      //
+        -9, 24, 2, -16, -20, 6, 22, -22,        //
+        -17, -20, -12, -27, -30, -25, -14, -36, //
+        -49, -1, -27, -39, -46, -44, -33, -51,  //
+        -14, -14, -22, -46, -44, -30, -15, -27, //
+        1, 7, -8, -64, -43, -16, 9, 8,          //
+        -15, 36, 12, -54, 8, -28, 24, 14,       //
+    };
+    constexpr int KING_END[64] = {
+        -74, -35, -18, -18, -11, 15, 4, -17,    // A8, B8, ...
+        -12, 17, 14, 17, 17, 38, 23, 11,        //
+        10, 17, 23, 15, 20, 45, 44, 13,         //
+        -8, 22, 24, 27, 26, 33, 26, 3,          //
+        -18, -4, 21, 24, 27, 23, 9, -11,        //
+        -19, -3, 11, 21, 23, 16, 7, -9,         //
+        -27, -11, 4, 13, 14, 4, -5, -17,        //
+        -53, -34, -21, -11, -28, -14, -24, -43, // A1, B1, ...
+    };
+    const int *PST_MID[6] = {
+        PAWN_MID,
+        KNIGHT_MID,
+        BISHOP_MID,
+        ROOK_MID,
+        QUEEN_MID,
+        KING_MID,
+    };
+    const int *PST_END[6] = {
+        PAWN_END,
+        KNIGHT_END,
+        BISHOP_END,
+        ROOK_END,
+        QUEEN_END,
+        KING_END,
+    };
+
+    // Fill the PST array
+    for (int p = 0; p < 6; p++)
+    {
+        for (int sq = 0; sq < 64; sq++)
+        {
+            // flip to put sq56 -> A1 and so on
+            PST[p][sq][0] = PST_MID[p][sq ^ 56];
+            PST[p][sq][1] = PST_END[p][sq ^ 56];
+            // flip for black
+            PST[p + 6][sq][0] = -PST_MID[p][sq];
+            PST[p + 6][sq][1] = -PST_END[p][sq];
+        }
+    }
+}
+
+void Evaluation::initPawnmask()
+{
+    // Initialize file masks
+    for (int file = 0; file < 8; file++)
+    {
+        fileMasks[file] = 0;
+        for (int rank = 0; rank < 8; rank++)
+        {
+            fileMasks[file] |= (1ULL << (rank * 8 + file));
+        }
+    }
+}
+
+chess::Bitboard Evaluation::getWhitePassedMask(int sq) const
+{
+    int file = sq % 8;
+    int rank = sq / 8;
+    chess::Bitboard result = 0;
+
+    // Add files (current and adjacent)
+    for (int f = std::max(0, file - 1); f <= std::min(7, file + 1); f++)
+    {
+        // Add squares in front of the pawn
+        for (int r = rank + 1; r < 8; r++)
+        {
+            result |= (1ULL << (r * 8 + f));
+        }
+    }
+
+    return result;
+}
+
+chess::Bitboard Evaluation::getBlackPassedMask(int sq) const
+{
+    int file = sq % 8;
+    int rank = sq / 8;
+    chess::Bitboard result = 0;
+
+    // Add files (current and adjacent)
+    for (int f = std::max(0, file - 1); f <= std::min(7, file + 1); f++)
+    {
+        // Add squares behind the pawn
+        for (int r = rank - 1; r >= 0; r--)
+        {
+            result |= (1ULL << (r * 8 + f));
+        }
+    }
+
+    return result;
+}
+
+chess::Bitboard Evaluation::getIsolatedMask(int sq) const
+{
+    int file = sq % 8;
+    chess::Bitboard result = 0;
+
+    // Add adjacent files
+    if (file > 0)
+        result |= fileMasks[file - 1];
+    if (file < 7)
+        result |= fileMasks[file + 1];
+
+    return result;
+}
 
 int Evaluation::evaluate(const chess::Board &board) const
 {
-    // Determine perspective of evaluation (positive is good for side to move)
-    int perspective = board.sideToMove() == chess::Color::WHITE ? 1 : -1;
-
-    // Check for checkmate/stalemate
-    chess::Movelist moves;
-    chess::movegen::legalmoves(moves, board);
-
-    if (moves.empty())
+    int eval_mid = 0, eval_end = 0;
+    int phase = 0;
+    auto pieces = board.occ();
+    // draw evaluation
+    int wbish_on_w = 0, wbish_on_b = 0; // number of white bishop on light and dark tiles
+    int bbish_on_w = 0, bbish_on_b = 0; // number of black bishop on light and dark tiles
+    int wbish = 0, bbish = 0;
+    int wknight = 0, bknight = 0;
+    bool minor_only = true;
+    // mobility
+    int wkr = 0, bkr = 0;         // king rank
+    int wkf = 0, bkf = 0;         // king file
+    int bishmob = 0, rookmob = 0; // number of squares bishop and rooks see (white - black)
+    // xray bitboards
+    auto wbishx = pieces & ~board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE);
+    auto bbishx = pieces & ~board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK);
+    auto wrookx = wbishx & ~board.pieces(chess::PieceType::ROOK, chess::Color::WHITE);
+    auto brookx = bbishx & ~board.pieces(chess::PieceType::ROOK, chess::Color::BLACK);
+    auto wpawns = board.pieces(chess::PieceType::PAWN, chess::Color::WHITE);
+    auto bpawns = board.pieces(chess::PieceType::PAWN, chess::Color::BLACK);
+    // loop through all pieces
+    while (pieces)
     {
-        if (board.inCheck())
+        auto sq = chess::builtin::poplsb(pieces);
+        int sqi = (int)sq;
+        int piece = (int)board.at(sq);
+        // add material value
+        eval_mid += PVAL[piece][0];
+        eval_end += PVAL[piece][1];
+        // add positional value
+        eval_mid += PST[piece][sqi][0];
+        eval_end += PST[piece][sqi][1];
+        switch (piece)
         {
-            // Checkmate is worst possible eval, adjusted for depth to prefer mates in fewer moves
-            return -30000 * perspective;
-        }
-        else
-        {
-            // Stalemate is a draw (0)
-            return 0;
-        }
-    }
-
-    // Calculate game phase for tapered evaluation (smooth transition between middlegame and endgame)
-    int gamePhase = calculateGamePhase(board);
-
-    // Calculate various evaluation components
-    int materialScore = evaluateMaterial(board);
-    int positionalScore = evaluatePosition(board, gamePhase);
-    int pawnStructureScore = evaluatePawnStructure(board);
-    int mobilityScore = evaluateMobility(board);
-    int kingSafetyScore = evaluateKingSafety(board, gamePhase);
-    int threatScore = evaluateThreats(board);
-    int pieceCoordinationScore = evaluatePieceCoordination(board);
-
-    // Calculate final score as weighted sum of components
-    int score = materialScore + positionalScore + pawnStructureScore +
-                mobilityScore + kingSafetyScore + threatScore + pieceCoordinationScore;
-
-    // Return score from side to move's perspective
-    return score * perspective;
-}
-
-int Evaluation::evaluateMaterial(const chess::Board &board) const
-{
-    int whiteScore = 0;
-    int blackScore = 0;
-
-    // Calculate material for each piece type
-    for (int pt = 0; pt < 6; pt++)
-    {
-        chess::PieceType pieceType = static_cast<chess::PieceType>(pt);
-        whiteScore += chess::builtin::popcount(board.pieces(pieceType, chess::Color::WHITE)) * PIECE_VALUES[pt];
-        blackScore += chess::builtin::popcount(board.pieces(pieceType, chess::Color::BLACK)) * PIECE_VALUES[pt];
-    }
-
-    return whiteScore - blackScore;
-}
-
-bool Evaluation::isEndgame(const chess::Board &board) const
-{
-    // Consider it an endgame if:
-    // 1. Both sides have no queens, or
-    // 2. The side with a queen has <= 1 minor piece and the other side has <= 2 minors
-
-    bool whiteHasQueen = board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE) != 0;
-    bool blackHasQueen = board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK) != 0;
-
-    if (!whiteHasQueen && !blackHasQueen)
-    {
-        return true;
-    }
-
-    int whiteMinors =
-        chess::builtin::popcount(board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE));
-
-    int blackMinors =
-        chess::builtin::popcount(board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK));
-
-    if ((whiteHasQueen && whiteMinors <= 1 && !blackHasQueen && blackMinors <= 2) ||
-        (blackHasQueen && blackMinors <= 1 && !whiteHasQueen && whiteMinors <= 2))
-    {
-        return true;
-    }
-
-    // Check total material - if less than threshold, consider it endgame
-    int totalMaterial =
-        chess::builtin::popcount(board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::ROOK, chess::Color::WHITE)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::ROOK, chess::Color::BLACK)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE)) +
-        chess::builtin::popcount(board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK));
-
-    return totalMaterial <= 6;
-}
-
-int Evaluation::evaluatePosition(const chess::Board &board, int gamePhase) const
-{
-    int whiteScore = 0;
-    int blackScore = 0;
-
-    // Evaluate positional value of each piece
-    chess::Bitboard whitePawns = board.pieces(chess::PieceType::PAWN, chess::Color::WHITE);
-    chess::Bitboard blackPawns = board.pieces(chess::PieceType::PAWN, chess::Color::BLACK);
-    chess::Bitboard whiteKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE);
-    chess::Bitboard blackKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK);
-    chess::Bitboard whiteBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE);
-    chess::Bitboard blackBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK);
-    chess::Bitboard whiteRooks = board.pieces(chess::PieceType::ROOK, chess::Color::WHITE);
-    chess::Bitboard blackRooks = board.pieces(chess::PieceType::ROOK, chess::Color::BLACK);
-    chess::Bitboard whiteQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE);
-    chess::Bitboard blackQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK);
-
-    // Process each piece type
-    while (whitePawns)
-    {
-        int sq = chess::builtin::poplsb(whitePawns);
-        whiteScore += PAWN_PST[sq];
-    }
-
-    while (blackPawns)
-    {
-        int sq = chess::builtin::poplsb(blackPawns);
-        blackScore += PAWN_PST[mirrorSquare(sq)];
-    }
-
-    while (whiteKnights)
-    {
-        int sq = chess::builtin::poplsb(whiteKnights);
-        whiteScore += KNIGHT_PST[sq];
-    }
-
-    while (blackKnights)
-    {
-        int sq = chess::builtin::poplsb(blackKnights);
-        blackScore += KNIGHT_PST[mirrorSquare(sq)];
-    }
-
-    while (whiteBishops)
-    {
-        int sq = chess::builtin::poplsb(whiteBishops);
-        whiteScore += BISHOP_PST[sq];
-    }
-
-    while (blackBishops)
-    {
-        int sq = chess::builtin::poplsb(blackBishops);
-        blackScore += BISHOP_PST[mirrorSquare(sq)];
-    }
-
-    while (whiteRooks)
-    {
-        int sq = chess::builtin::poplsb(whiteRooks);
-        whiteScore += ROOK_PST[sq];
-        
-        // Bonus for rooks on open or semi-open files
-        int file = sq & 7;
-        if (isOpenFile(board, file)) {
-            whiteScore += 25;
-        } else if (isSemiOpenFile(board, file, chess::Color::WHITE)) {
-            whiteScore += 15;
-        }
-        
-        // Bonus for rooks on 7th rank
-        if ((sq >> 3) == 6) {
-            whiteScore += 20;
-        }
-    }
-
-    while (blackRooks)
-    {
-        int sq = chess::builtin::poplsb(blackRooks);
-        blackScore += ROOK_PST[mirrorSquare(sq)];
-        
-        // Bonus for rooks on open or semi-open files
-        int file = sq & 7;
-        if (isOpenFile(board, file)) {
-            blackScore += 25;
-        } else if (isSemiOpenFile(board, file, chess::Color::BLACK)) {
-            blackScore += 15;
-        }
-        
-        // Bonus for rooks on 7th rank (2nd rank for black)
-        if ((sq >> 3) == 1) {
-            blackScore += 20;
-        }
-    }
-
-    while (whiteQueens)
-    {
-        int sq = chess::builtin::poplsb(whiteQueens);
-        whiteScore += QUEEN_PST[sq];
-        
-        // Bonus for queens on open or semi-open files
-        int file = sq & 7;
-        if (isOpenFile(board, file)) {
-            whiteScore += 10;
-        } else if (isSemiOpenFile(board, file, chess::Color::WHITE)) {
-            whiteScore += 5;
-        }
-        
-        // Bonus for queen on 7th rank
-        if ((sq >> 3) == 6) {
-            whiteScore += 10;
-        }
-    }
-
-    while (blackQueens)
-    {
-        int sq = chess::builtin::poplsb(blackQueens);
-        blackScore += QUEEN_PST[mirrorSquare(sq)];
-        
-        // Bonus for queens on open or semi-open files
-        int file = sq & 7;
-        if (isOpenFile(board, file)) {
-            blackScore += 10;
-        } else if (isSemiOpenFile(board, file, chess::Color::BLACK)) {
-            blackScore += 5;
-        }
-        
-        // Bonus for queen on 7th rank (2nd rank for black)
-        if ((sq >> 3) == 1) {
-            blackScore += 10;
-        }
-    }
-
-    // King position evaluation based on game phase (tapered evaluation)
-    int whiteKingSq = chess::builtin::lsb(board.pieces(chess::PieceType::KING, chess::Color::WHITE));
-    int blackKingSq = chess::builtin::lsb(board.pieces(chess::PieceType::KING, chess::Color::BLACK));
-
-    // Interpolate between middlegame and endgame scores based on game phase
-    int whiteKingMiddlegameScore = KING_MIDDLE_PST[whiteKingSq];
-    int whiteKingEndgameScore = KING_END_PST[whiteKingSq];
-    whiteScore += (whiteKingMiddlegameScore * gamePhase + whiteKingEndgameScore * (256 - gamePhase)) / 256;
-    
-    int blackKingMiddlegameScore = KING_MIDDLE_PST[mirrorSquare(blackKingSq)];
-    int blackKingEndgameScore = KING_END_PST[mirrorSquare(blackKingSq)];
-    blackScore += (blackKingMiddlegameScore * gamePhase + blackKingEndgameScore * (256 - gamePhase)) / 256;
-
-    // Bishop pair bonus
-    if (chess::builtin::popcount(whiteBishops) >= 2)
-    {
-        whiteScore += 30;
-    }
-
-    if (chess::builtin::popcount(blackBishops) >= 2)
-    {
-        blackScore += 30;
-    }
-    
-    // Knight penalty in endgame with few pawns
-    if (gamePhase < 64) { // Deep endgame
-        int whitePawnCount = chess::builtin::popcount(board.pieces(chess::PieceType::PAWN, chess::Color::WHITE));
-        int blackPawnCount = chess::builtin::popcount(board.pieces(chess::PieceType::PAWN, chess::Color::BLACK));
-        
-        if (whitePawnCount <= 2) {
-            whiteScore -= 15 * chess::builtin::popcount(whiteKnights);
-        }
-        
-        if (blackPawnCount <= 2) {
-            blackScore -= 15 * chess::builtin::popcount(blackKnights);
-        }
-    }
-
-    return whiteScore - blackScore;
-}
-
-int Evaluation::evaluatePawnStructure(const chess::Board &board) const
-{
-    int whiteScore = 0;
-    int blackScore = 0;
-
-    chess::Bitboard whitePawns = board.pieces(chess::PieceType::PAWN, chess::Color::WHITE);
-    chess::Bitboard blackPawns = board.pieces(chess::PieceType::PAWN, chess::Color::BLACK);
-
-    // Evaluate pawn islands (groups of pawns separated by empty files)
-    // Fewer islands is usually better
-    chess::Bitboard whitePawnFiles = 0;
-    chess::Bitboard blackPawnFiles = 0;
-
-    chess::Bitboard whitePawnsCopy = whitePawns;
-    chess::Bitboard blackPawnsCopy = blackPawns;
-
-    while (whitePawnsCopy)
-    {
-        int sq = chess::builtin::poplsb(whitePawnsCopy);
-        whitePawnFiles |= 1ULL << (sq & 7); // Get file (0-7)
-    }
-
-    while (blackPawnsCopy)
-    {
-        int sq = chess::builtin::poplsb(blackPawnsCopy);
-        blackPawnFiles |= 1ULL << (sq & 7); // Get file (0-7)
-    }
-
-    // Count islands (groups of consecutive set bits)
-    int whiteIslands = 0;
-    int blackIslands = 0;
-
-    bool whitePrevFile = false;
-    bool blackPrevFile = false;
-
-    for (int file = 0; file < 8; file++)
-    {
-        bool whiteHasPawn = (whitePawnFiles & (1ULL << file)) != 0;
-        bool blackHasPawn = (blackPawnFiles & (1ULL << file)) != 0;
-
-        if (whiteHasPawn && !whitePrevFile)
-        {
-            whiteIslands++;
-        }
-
-        if (blackHasPawn && !blackPrevFile)
-        {
-            blackIslands++;
-        }
-
-        whitePrevFile = whiteHasPawn;
-        blackPrevFile = blackHasPawn;
-    }
-
-    // Penalty for more than 1 island
-    whiteScore -= (whiteIslands - 1) * 10;
-    blackScore -= (blackIslands - 1) * 10;
-
-    // Bonus for passed pawns
-    whitePawnsCopy = whitePawns;
-    while (whitePawnsCopy)
-    {
-        int sq = chess::builtin::poplsb(whitePawnsCopy);
-        int file = sq & 7;
-        int rank = sq >> 3;
-
-        // Check if pawn is passed (no enemy pawns ahead on same or adjacent files)
-        bool passed = true;
-        chess::Bitboard ahead = 0;
-
-        for (int r = rank + 1; r < 8; r++)
-        {
-            if (file > 0)
-                ahead |= 1ULL << (r * 8 + file - 1);
-            ahead |= 1ULL << (r * 8 + file);
-            if (file < 7)
-                ahead |= 1ULL << (r * 8 + file + 1);
-        }
-
-        if (ahead & blackPawns)
-        {
-            passed = false;
-        }
-
-        if (passed)
-        {
-            whiteScore += 20 + 5 * rank; // More bonus for pawns closer to promotion
-        }
-    }
-
-    blackPawnsCopy = blackPawns;
-    while (blackPawnsCopy)
-    {
-        int sq = chess::builtin::poplsb(blackPawnsCopy);
-        int file = sq & 7;
-        int rank = sq >> 3;
-
-        // Check if pawn is passed
-        bool passed = true;
-        chess::Bitboard ahead = 0;
-
-        for (int r = rank - 1; r >= 0; r--)
-        {
-            if (file > 0)
-                ahead |= 1ULL << (r * 8 + file - 1);
-            ahead |= 1ULL << (r * 8 + file);
-            if (file < 7)
-                ahead |= 1ULL << (r * 8 + file + 1);
-        }
-
-        if (ahead & whitePawns)
-        {
-            passed = false;
-        }
-
-        if (passed)
-        {
-            blackScore += 20 + 5 * (7 - rank); // More bonus for pawns closer to promotion
-        }
-    }
-
-    return whiteScore - blackScore;
-}
-
-int Evaluation::calculateGamePhase(const chess::Board &board) const
-{
-    // Game phase is calculated as a function of the remaining material
-    // Full game = 256, endgame = 0, with gradual blending between them
-    
-    constexpr int pawnPhase = 0;
-    constexpr int knightPhase = 1;
-    constexpr int bishopPhase = 1;
-    constexpr int rookPhase = 2;
-    constexpr int queenPhase = 4;
-    constexpr int totalPhase = knightPhase * 4 + bishopPhase * 4 + rookPhase * 4 + queenPhase * 2;
-    
-    int phase = totalPhase;
-    
-    // Subtract material from the full phase value to determine current game phase
-    phase -= knightPhase * chess::builtin::popcount(
-        board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE) |
-        board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK));
-        
-    phase -= bishopPhase * chess::builtin::popcount(
-        board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE) |
-        board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK));
-        
-    phase -= rookPhase * chess::builtin::popcount(
-        board.pieces(chess::PieceType::ROOK, chess::Color::WHITE) |
-        board.pieces(chess::PieceType::ROOK, chess::Color::BLACK));
-        
-    phase -= queenPhase * chess::builtin::popcount(
-        board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE) |
-        board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK));
-    
-    // Scale phase between 0 and 256
-    phase = (phase * 256 + (totalPhase / 2)) / totalPhase;
-    
-    // Ensure phase is within bounds
-    if (phase < 0) phase = 0;
-    if (phase > 256) phase = 256;
-    
-    return phase;
-}
-
-bool Evaluation::isOpenFile(const chess::Board &board, int file) const
-{
-    // A file is open if there are no pawns on it from either side
-    chess::Bitboard fileMask = chess::attacks::MASK_FILE[file];
-    
-    chess::Bitboard allPawns = board.pieces(chess::PieceType::PAWN, chess::Color::WHITE) |
-                               board.pieces(chess::PieceType::PAWN, chess::Color::BLACK);
-    
-    return !(allPawns & fileMask);
-}
-
-bool Evaluation::isSemiOpenFile(const chess::Board &board, int file, chess::Color color) const
-{
-    // A file is semi-open if there are no pawns of a specific color on it
-    chess::Bitboard fileMask = chess::attacks::MASK_FILE[file];
-    
-    chess::Bitboard ourPawns = board.pieces(chess::PieceType::PAWN, color);
-    
-    return !(ourPawns & fileMask);
-}
-
-int Evaluation::evaluateMobility(const chess::Board &board) const
-{
-    int whiteScore = 0;
-    int blackScore = 0;
-    
-    chess::Bitboard occupied = board.occ();
-    chess::Bitboard whiteOcc = board.us(chess::Color::WHITE);
-    chess::Bitboard blackOcc = board.us(chess::Color::BLACK);
-    
-    // Knights
-    chess::Bitboard whiteKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE);
-    while (whiteKnights) {
-        int sq = chess::builtin::poplsb(whiteKnights);
-        // Count legal moves for this knight, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::knight(static_cast<chess::Square>(sq)) & ~whiteOcc);
-        whiteScore += moves * MOBILITY_BONUS[0];
-    }
-    
-    chess::Bitboard blackKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK);
-    while (blackKnights) {
-        int sq = chess::builtin::poplsb(blackKnights);
-        // Count legal moves for this knight, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::knight(static_cast<chess::Square>(sq)) & ~blackOcc);
-        blackScore += moves * MOBILITY_BONUS[0];
-    }
-    
-    // Bishops
-    chess::Bitboard whiteBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE);
-    while (whiteBishops) {
-        int sq = chess::builtin::poplsb(whiteBishops);
-        // Count legal moves for this bishop, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::bishop(static_cast<chess::Square>(sq), occupied) & ~whiteOcc);
-        whiteScore += moves * MOBILITY_BONUS[1];
-    }
-    
-    chess::Bitboard blackBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK);
-    while (blackBishops) {
-        int sq = chess::builtin::poplsb(blackBishops);
-        // Count legal moves for this bishop, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::bishop(static_cast<chess::Square>(sq), occupied) & ~blackOcc);
-        blackScore += moves * MOBILITY_BONUS[1];
-    }
-    
-    // Rooks
-    chess::Bitboard whiteRooks = board.pieces(chess::PieceType::ROOK, chess::Color::WHITE);
-    while (whiteRooks) {
-        int sq = chess::builtin::poplsb(whiteRooks);
-        // Count legal moves for this rook, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::rook(static_cast<chess::Square>(sq), occupied) & ~whiteOcc);
-        whiteScore += moves * MOBILITY_BONUS[2];
-    }
-    
-    chess::Bitboard blackRooks = board.pieces(chess::PieceType::ROOK, chess::Color::BLACK);
-    while (blackRooks) {
-        int sq = chess::builtin::poplsb(blackRooks);
-        // Count legal moves for this rook, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::rook(static_cast<chess::Square>(sq), occupied) & ~blackOcc);
-        blackScore += moves * MOBILITY_BONUS[2];
-    }
-    
-    // Queens
-    chess::Bitboard whiteQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE);
-    while (whiteQueens) {
-        int sq = chess::builtin::poplsb(whiteQueens);
-        // Count legal moves for this queen, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::queen(static_cast<chess::Square>(sq), occupied) & ~whiteOcc);
-        whiteScore += moves * MOBILITY_BONUS[3];
-    }
-    
-    chess::Bitboard blackQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK);
-    while (blackQueens) {
-        int sq = chess::builtin::poplsb(blackQueens);
-        // Count legal moves for this queen, excluding captures of own pieces
-        int moves = chess::builtin::popcount(chess::attacks::queen(static_cast<chess::Square>(sq), occupied) & ~blackOcc);
-        blackScore += moves * MOBILITY_BONUS[3];
-    }
-    
-    return whiteScore - blackScore;
-}
-
-int Evaluation::countPawnShield(const chess::Board &board, int kingSq, chess::Color color) const
-{
-    int kingFile = kingSq & 7;
-    int kingRank = kingSq >> 3;
-    int count = 0;
-    
-    // Define the area in front of the king to check for shield pawns
-    int startFile = std::max(0, kingFile - 1);
-    int endFile = std::min(7, kingFile + 1);
-    int pawnRanks[2][3] = {
-        {1, 2, 3},  // White: check ranks 1, 2, and 3 in front of king
-        {6, 5, 4}   // Black: check ranks 6, 5, and 4 in front of king
-    };
-    
-    chess::Bitboard pawns = board.pieces(chess::PieceType::PAWN, color);
-    
-    // Check pawns in the shield area
-    for (int f = startFile; f <= endFile; f++) {
-        for (int i = 0; i < 3; i++) {
-            int r = pawnRanks[static_cast<int>(color)][i];
-            int sq = r * 8 + f;
-            if (pawns & (1ULL << sq)) {
-                // Pawns closer to the king provide better protection
-                count += KING_SHIELD_BONUS[i];
-                break;  // Only count one pawn per file
+        // pawn structure
+        case 0:
+            minor_only = false;
+            // passed (+ for white)
+            if ((getWhitePassedMask(sqi) & bpawns) == 0)
+            {
+                eval_mid += PAWN_PASSED_WEIGHT[7 - (sqi / 8)][0];
+                eval_end += PAWN_PASSED_WEIGHT[7 - (sqi / 8)][1];
             }
-        }
-    }
-    
-    return count;
-}
-
-int Evaluation::evaluateKingSafety(const chess::Board &board, int gamePhase) const
-{
-    // King safety is more important in the middlegame
-    if (gamePhase < 64) {  // Endgame
-        return 0;
-    }
-    
-    int whiteScore = 0;
-    int blackScore = 0;
-    
-    int whiteKingSq = chess::builtin::lsb(board.pieces(chess::PieceType::KING, chess::Color::WHITE));
-    int blackKingSq = chess::builtin::lsb(board.pieces(chess::PieceType::KING, chess::Color::BLACK));
-    
-    // Evaluate pawn shield and storm for white king
-    whiteScore += countPawnShield(board, whiteKingSq, chess::Color::WHITE);
-    
-    // Evaluate pawn shield and storm for black king
-    blackScore += countPawnShield(board, blackKingSq, chess::Color::BLACK);
-    
-    // King exposure (open lines to the king)
-    int whiteKingFile = whiteKingSq & 7;
-    int blackKingFile = blackKingSq & 7;
-    
-    // Penalties for king on open or semi-open files
-    if (isOpenFile(board, whiteKingFile)) {
-        whiteScore -= 30;
-    } else if (isSemiOpenFile(board, whiteKingFile, chess::Color::WHITE)) {
-        whiteScore -= 15;
-    }
-    
-    if (isOpenFile(board, blackKingFile)) {
-        blackScore -= 30;
-    } else if (isSemiOpenFile(board, blackKingFile, chess::Color::BLACK)) {
-        blackScore -= 15;
-    }
-    
-    // Check adjacent files too
-    for (int offset = -1; offset <= 1; offset += 2) {
-        int file = whiteKingFile + offset;
-        if (file >= 0 && file <= 7) {
-            if (isOpenFile(board, file)) {
-                whiteScore -= 15;
-            } else if (isSemiOpenFile(board, file, chess::Color::WHITE)) {
-                whiteScore -= 7;
+            // isolated (- for white)
+            if ((getIsolatedMask(sqi) & wpawns) == 0)
+            {
+                eval_mid -= PAWN_ISOLATION_WEIGHT[0];
+                eval_end -= PAWN_ISOLATION_WEIGHT[1];
             }
-        }
-        
-        file = blackKingFile + offset;
-        if (file >= 0 && file <= 7) {
-            if (isOpenFile(board, file)) {
-                blackScore -= 15;
-            } else if (isSemiOpenFile(board, file, chess::Color::BLACK)) {
-                blackScore -= 7;
+            break;
+        case 6:
+            minor_only = false;
+            // passed (- for white)
+            if ((getBlackPassedMask(sqi) & wpawns) == 0)
+            {
+                eval_mid -= PAWN_PASSED_WEIGHT[sqi / 8][0];
+                eval_end -= PAWN_PASSED_WEIGHT[sqi / 8][1];
             }
-        }
-    }
-    
-    // Enemy piece tropism (penalty for enemy pieces close to king)
-    chess::Bitboard whiteKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE);
-    chess::Bitboard whiteBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE);
-    chess::Bitboard whiteRooks = board.pieces(chess::PieceType::ROOK, chess::Color::WHITE);
-    chess::Bitboard whiteQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE);
-    
-    chess::Bitboard blackKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK);
-    chess::Bitboard blackBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK);
-    chess::Bitboard blackRooks = board.pieces(chess::PieceType::ROOK, chess::Color::BLACK);
-    chess::Bitboard blackQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK);
-    
-    // Check distance of enemy pieces to kings
-    while (whiteQueens) {
-        int sq = chess::builtin::poplsb(whiteQueens);
-        int dist = getDistance(sq, blackKingSq);
-        blackScore -= (8 - dist) * 5;  // Penalty based on closeness
-    }
-    
-    while (blackQueens) {
-        int sq = chess::builtin::poplsb(blackQueens);
-        int dist = getDistance(sq, whiteKingSq);
-        whiteScore -= (8 - dist) * 5;  // Penalty based on closeness
-    }
-    
-    while (whiteRooks) {
-        int sq = chess::builtin::poplsb(whiteRooks);
-        int dist = getDistance(sq, blackKingSq);
-        blackScore -= (8 - dist) * 3;
-    }
-    
-    while (blackRooks) {
-        int sq = chess::builtin::poplsb(blackRooks);
-        int dist = getDistance(sq, whiteKingSq);
-        whiteScore -= (8 - dist) * 3;
-    }
-    
-    // Scale king safety by game phase (more important in middlegame)
-    whiteScore = (whiteScore * gamePhase) / 256;
-    blackScore = (blackScore * gamePhase) / 256;
-    
-    return whiteScore - blackScore;
-}
-
-int Evaluation::getDistance(int sq1, int sq2) const
-{
-    int file1 = sq1 & 7;
-    int rank1 = sq1 >> 3;
-    int file2 = sq2 & 7;
-    int rank2 = sq2 >> 3;
-    
-    return std::max(std::abs(file1 - file2), std::abs(rank1 - rank2));
-}
-
-bool Evaluation::isPassed(const chess::Board &board, int sq, chess::Color color) const
-{
-    int file = sq & 7;
-    int rank = sq >> 3;
-    
-    chess::Bitboard enemyPawns = board.pieces(chess::PieceType::PAWN, ~color);
-    chess::Bitboard ahead = 0;
-    
-    if (color == chess::Color::WHITE) {
-        for (int r = rank + 1; r < 8; r++) {
-            if (file > 0) ahead |= 1ULL << (r * 8 + file - 1);
-            ahead |= 1ULL << (r * 8 + file);
-            if (file < 7) ahead |= 1ULL << (r * 8 + file + 1);
-        }
-    } else {
-        for (int r = rank - 1; r >= 0; r--) {
-            if (file > 0) ahead |= 1ULL << (r * 8 + file - 1);
-            ahead |= 1ULL << (r * 8 + file);
-            if (file < 7) ahead |= 1ULL << (r * 8 + file + 1);
-        }
-    }
-    
-    return !(ahead & enemyPawns);
-}
-
-bool Evaluation::isIsolated(const chess::Board &board, int sq, chess::Color color) const
-{
-    int file = sq & 7;
-    chess::Bitboard adjacentFiles = 0;
-    
-    if (file > 0) adjacentFiles |= chess::attacks::MASK_FILE[file - 1];
-    if (file < 7) adjacentFiles |= chess::attacks::MASK_FILE[file + 1];
-    
-    return !(board.pieces(chess::PieceType::PAWN, color) & adjacentFiles);
-}
-
-bool Evaluation::isDoubled(const chess::Board &board, int sq, chess::Color color) const
-{
-    int file = sq & 7;
-    chess::Bitboard fileMask = chess::attacks::MASK_FILE[file];
-    
-    // Count pawns on the same file
-    return chess::builtin::popcount(board.pieces(chess::PieceType::PAWN, color) & fileMask) > 1;
-}
-
-bool Evaluation::isConnected(const chess::Board &board, int sq, chess::Color color) const
-{
-    chess::Bitboard pawns = board.pieces(chess::PieceType::PAWN, color);
-    int file = sq & 7;
-    int rank = sq >> 3;
-    
-    chess::Bitboard pawnSquare = 1ULL << sq;
-    chess::Bitboard adjacent = 0;
-    
-    // Check if there are pawns adjacent to this one (diagonally or on the same rank)
-    if (file > 0) {
-        // Left
-        adjacent |= pawnSquare >> 1;
-        if (color == chess::Color::WHITE && rank > 0)
-            adjacent |= pawnSquare >> 9; // Diagonal down-left
-        else if (color == chess::Color::BLACK && rank < 7)
-            adjacent |= pawnSquare << 7; // Diagonal up-left
-    }
-    
-    if (file < 7) {
-        // Right
-        adjacent |= pawnSquare << 1;
-        if (color == chess::Color::WHITE && rank > 0)
-            adjacent |= pawnSquare >> 7; // Diagonal down-right
-        else if (color == chess::Color::BLACK && rank < 7)
-            adjacent |= pawnSquare << 9; // Diagonal up-right
-    }
-    
-    return (pawns & adjacent) != 0;
-}
-
-int Evaluation::evaluateThreats(const chess::Board &board) const
-{
-    int whiteScore = 0;
-    int blackScore = 0;
-    
-    chess::Bitboard whitePawns = board.pieces(chess::PieceType::PAWN, chess::Color::WHITE);
-    chess::Bitboard blackPawns = board.pieces(chess::PieceType::PAWN, chess::Color::BLACK);
-    chess::Bitboard whiteKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE);
-    chess::Bitboard blackKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK);
-    chess::Bitboard whiteBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE);
-    chess::Bitboard blackBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK);
-    chess::Bitboard whiteRooks = board.pieces(chess::PieceType::ROOK, chess::Color::WHITE);
-    chess::Bitboard blackRooks = board.pieces(chess::PieceType::ROOK, chess::Color::BLACK);
-    chess::Bitboard whiteQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE);
-    chess::Bitboard blackQueens = board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK);
-    
-    chess::Bitboard occupied = board.occ();
-    chess::Bitboard whiteOcc = board.us(chess::Color::WHITE);
-    chess::Bitboard blackOcc = board.us(chess::Color::BLACK);
-    
-    // Evaluate pawn threats
-    chess::Bitboard whitePawnAttacks = 0;
-    chess::Bitboard whiteTemp = whitePawns;
-    while (whiteTemp) {
-        int sq = chess::builtin::poplsb(whiteTemp);
-        whitePawnAttacks |= chess::attacks::pawn(chess::Color::WHITE, static_cast<chess::Square>(sq));
-    }
-    
-    chess::Bitboard blackPawnAttacks = 0;
-    chess::Bitboard blackTemp = blackPawns;
-    while (blackTemp) {
-        int sq = chess::builtin::poplsb(blackTemp);
-        blackPawnAttacks |= chess::attacks::pawn(chess::Color::BLACK, static_cast<chess::Square>(sq));
-    }
-    
-    // Minor pieces attacked by enemy pawns
-    int whitePiecesThreatened = chess::builtin::popcount(blackPawnAttacks & (whiteKnights | whiteBishops));
-    int blackPiecesThreatened = chess::builtin::popcount(whitePawnAttacks & (blackKnights | blackBishops));
-    
-    whiteScore -= whitePiecesThreatened * 20;
-    blackScore -= blackPiecesThreatened * 20;
-    
-    // Major pieces attacked by enemy pawns
-    whitePiecesThreatened = chess::builtin::popcount(blackPawnAttacks & (whiteRooks | whiteQueens));
-    blackPiecesThreatened = chess::builtin::popcount(whitePawnAttacks & (blackRooks | blackQueens));
-    
-    whiteScore -= whitePiecesThreatened * 40;
-    blackScore -= blackPiecesThreatened * 40;
-    
-    // Hanging pieces (undefended pieces)
-    chess::Bitboard whiteDefendedPieces = whitePawnAttacks;
-    chess::Bitboard blackDefendedPieces = blackPawnAttacks;
-    
-    // Add knight attacks
-    whiteTemp = whiteKnights;
-    while (whiteTemp) {
-        int sq = chess::builtin::poplsb(whiteTemp);
-        whiteDefendedPieces |= chess::attacks::knight(static_cast<chess::Square>(sq));
-    }
-    
-    blackTemp = blackKnights;
-    while (blackTemp) {
-        int sq = chess::builtin::poplsb(blackTemp);
-        blackDefendedPieces |= chess::attacks::knight(static_cast<chess::Square>(sq));
-    }
-    
-    // Add bishop attacks
-    whiteTemp = whiteBishops;
-    while (whiteTemp) {
-        int sq = chess::builtin::poplsb(whiteTemp);
-        whiteDefendedPieces |= chess::attacks::bishop(static_cast<chess::Square>(sq), occupied);
-    }
-    
-    blackTemp = blackBishops;
-    while (blackTemp) {
-        int sq = chess::builtin::poplsb(blackTemp);
-        blackDefendedPieces |= chess::attacks::bishop(static_cast<chess::Square>(sq), occupied);
-    }
-    
-    // Add rook attacks
-    whiteTemp = whiteRooks;
-    while (whiteTemp) {
-        int sq = chess::builtin::poplsb(whiteTemp);
-        whiteDefendedPieces |= chess::attacks::rook(static_cast<chess::Square>(sq), occupied);
-    }
-    
-    blackTemp = blackRooks;
-    while (blackTemp) {
-        int sq = chess::builtin::poplsb(blackTemp);
-        blackDefendedPieces |= chess::attacks::rook(static_cast<chess::Square>(sq), occupied);
-    }
-    
-    // Add queen attacks
-    whiteTemp = whiteQueens;
-    while (whiteTemp) {
-        int sq = chess::builtin::poplsb(whiteTemp);
-        whiteDefendedPieces |= chess::attacks::queen(static_cast<chess::Square>(sq), occupied);
-    }
-    
-    blackTemp = blackQueens;
-    while (blackTemp) {
-        int sq = chess::builtin::poplsb(blackTemp);
-        blackDefendedPieces |= chess::attacks::queen(static_cast<chess::Square>(sq), occupied);
-    }
-    
-    // Count hanging pieces (excluding pawns and kings)
-    chess::Bitboard whiteHangingPieces = (whiteKnights | whiteBishops | whiteRooks | whiteQueens) & ~whiteDefendedPieces;
-    chess::Bitboard blackHangingPieces = (blackKnights | blackBishops | blackRooks | blackQueens) & ~blackDefendedPieces;
-    
-    // Penalize hanging pieces
-    whiteScore -= chess::builtin::popcount(whiteHangingPieces) * 50;
-    blackScore -= chess::builtin::popcount(blackHangingPieces) * 50;
-    
-    return whiteScore - blackScore;
-}
-
-int Evaluation::evaluatePieceCoordination(const chess::Board &board) const
-{
-    int whiteScore = 0;
-    int blackScore = 0;
-    
-    chess::Bitboard whitePawns = board.pieces(chess::PieceType::PAWN, chess::Color::WHITE);
-    chess::Bitboard blackPawns = board.pieces(chess::PieceType::PAWN, chess::Color::BLACK);
-    chess::Bitboard whiteKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::WHITE);
-    chess::Bitboard blackKnights = board.pieces(chess::PieceType::KNIGHT, chess::Color::BLACK);
-    chess::Bitboard whiteBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::WHITE);
-    chess::Bitboard blackBishops = board.pieces(chess::PieceType::BISHOP, chess::Color::BLACK);
-    chess::Bitboard whiteRooks = board.pieces(chess::PieceType::ROOK, chess::Color::WHITE);
-    chess::Bitboard blackRooks = board.pieces(chess::PieceType::ROOK, chess::Color::BLACK);
-    
-    // Evaluate connected/protected pawns
-    chess::Bitboard whitePawnsCopy = whitePawns;
-    while (whitePawnsCopy) {
-        int sq = chess::builtin::poplsb(whitePawnsCopy);
-        
-        // Bonus for connected pawns
-        if (isConnected(board, sq, chess::Color::WHITE)) {
-            whiteScore += 10;
-        }
-        
-        // Penalty for isolated pawns
-        if (isIsolated(board, sq, chess::Color::WHITE)) {
-            whiteScore -= 15;
-        }
-        
-        // Penalty for doubled pawns
-        if (isDoubled(board, sq, chess::Color::WHITE)) {
-            whiteScore -= 10;
-        }
-    }
-    
-    chess::Bitboard blackPawnsCopy = blackPawns;
-    while (blackPawnsCopy) {
-        int sq = chess::builtin::poplsb(blackPawnsCopy);
-        
-        // Bonus for connected pawns
-        if (isConnected(board, sq, chess::Color::BLACK)) {
-            blackScore += 10;
-        }
-        
-        // Penalty for isolated pawns
-        if (isIsolated(board, sq, chess::Color::BLACK)) {
-            blackScore -= 15;
-        }
-        
-        // Penalty for doubled pawns
-        if (isDoubled(board, sq, chess::Color::BLACK)) {
-            blackScore -= 10;
-        }
-    }
-    
-    // Evaluate rook coordination (rooks on same rank or file)
-    if (chess::builtin::popcount(whiteRooks) >= 2) {
-        chess::Bitboard rooks = whiteRooks;
-        int firstRook = chess::builtin::poplsb(rooks);
-        int firstRookRank = firstRook >> 3;
-        int firstRookFile = firstRook & 7;
-        
-        bool rookConnection = false;
-        chess::Bitboard remainingRooks = rooks;
-        
-        while (remainingRooks) {
-            int secondRook = chess::builtin::poplsb(remainingRooks);
-            int secondRookRank = secondRook >> 3;
-            int secondRookFile = secondRook & 7;
-            
-            // Connected on rank
-            if (firstRookRank == secondRookRank) {
-                rookConnection = true;
-                break;
+            // isolated (+ for white)
+            if ((getIsolatedMask(sqi) & bpawns) == 0)
+            {
+                eval_mid += PAWN_ISOLATION_WEIGHT[0];
+                eval_end += PAWN_ISOLATION_WEIGHT[1];
             }
-            
-            // Connected on file
-            if (firstRookFile == secondRookFile) {
-                rookConnection = true;
-                break;
-            }
-        }
-        
-        if (rookConnection) {
-            whiteScore += 15;
-        }
-    }
-    
-    if (chess::builtin::popcount(blackRooks) >= 2) {
-        chess::Bitboard rooks = blackRooks;
-        int firstRook = chess::builtin::poplsb(rooks);
-        int firstRookRank = firstRook >> 3;
-        int firstRookFile = firstRook & 7;
-        
-        bool rookConnection = false;
-        chess::Bitboard remainingRooks = rooks;
-        
-        while (remainingRooks) {
-            int secondRook = chess::builtin::poplsb(remainingRooks);
-            int secondRookRank = secondRook >> 3;
-            int secondRookFile = secondRook & 7;
-            
-            // Connected on rank
-            if (firstRookRank == secondRookRank) {
-                rookConnection = true;
-                break;
-            }
-            
-            // Connected on file
-            if (firstRookFile == secondRookFile) {
-                rookConnection = true;
-                break;
-            }
-        }
-        
-        if (rookConnection) {
-            blackScore += 15;
-        }
-    }
-    
-    // Knight outposts
-    chess::Bitboard whiteKnightsCopy = whiteKnights;
-    while (whiteKnightsCopy) {
-        int sq = chess::builtin::poplsb(whiteKnightsCopy);
-        int rank = sq >> 3;
-        int file = sq & 7;
-        
-        // Knight on outpost (advanced, protected by pawn, can't be attacked by enemy pawn)
-        if (rank >= 4) {  // On opponent's half
-            chess::Bitboard attackDefenders = chess::attacks::pawn(chess::Color::WHITE, static_cast<chess::Square>(sq));
-            bool protectedByPawn = (attackDefenders & whitePawns) != 0;
-            
-            // Check if it can be attacked by enemy pawns
-            bool attackedByPawn = false;
-            if (file > 0) {
-                attackedByPawn |= blackPawns & (1ULL << (sq + 7));
-            }
-            if (file < 7) {
-                attackedByPawn |= blackPawns & (1ULL << (sq + 9));
-            }
-            
-            if (protectedByPawn && !attackedByPawn) {
-                whiteScore += 20;  // Strong outpost
-            }
+            break;
+        // knight count
+        case 1:
+            phase++;
+            wknight++;
+            break;
+        case 7:
+            phase++;
+            bknight++;
+            break;
+        // bishop mobility (xrays queens)
+        case 2:
+            phase++;
+            wbish++;
+            wbish_on_w += lighttile(sqi);
+            wbish_on_b += !lighttile(sqi);
+            bishmob += chess::builtin::popcount(chess::attacks::bishop(sq, wbishx));
+            break;
+        case 8:
+            phase++;
+            bbish++;
+            bbish_on_w += lighttile(sqi);
+            bbish_on_b += !lighttile(sqi);
+            bishmob -= chess::builtin::popcount(chess::attacks::bishop(sq, bbishx));
+            break;
+        // rook mobility (xrays rooks and queens)
+        case 3:
+            phase += 2;
+            minor_only = false;
+            rookmob += chess::builtin::popcount(chess::attacks::rook(sq, wrookx));
+            break;
+        case 9:
+            phase += 2;
+            minor_only = false;
+            rookmob -= chess::builtin::popcount(chess::attacks::rook(sq, brookx));
+            break;
+        // queen count
+        case 4:
+            phase += 4;
+            minor_only = false;
+            break;
+        case 10:
+            phase += 4;
+            minor_only = false;
+            break;
+        // king proximity
+        case 5:
+            wkr = (int)chess::utils::squareRank(sq);
+            wkf = (int)chess::utils::squareFile(sq);
+            break;
+        case 11:
+            bkr = (int)chess::utils::squareRank(sq);
+            bkf = (int)chess::utils::squareFile(sq);
+            break;
         }
     }
-    
-    chess::Bitboard blackKnightsCopy = blackKnights;
-    while (blackKnightsCopy) {
-        int sq = chess::builtin::poplsb(blackKnightsCopy);
-        int rank = sq >> 3;
-        int file = sq & 7;
-        
-        // Knight on outpost (advanced, protected by pawn, can't be attacked by enemy pawn)
-        if (rank <= 3) {  // On opponent's half
-            chess::Bitboard attackDefenders = chess::attacks::pawn(chess::Color::BLACK, static_cast<chess::Square>(sq));
-            bool protectedByPawn = (attackDefenders & blackPawns) != 0;
-            
-            // Check if it can be attacked by enemy pawns
-            bool attackedByPawn = false;
-            if (file > 0) {
-                attackedByPawn |= whitePawns & (1ULL << (sq - 9));
-            }
-            if (file < 7) {
-                attackedByPawn |= whitePawns & (1ULL << (sq - 7));
-            }
-            
-            if (protectedByPawn && !attackedByPawn) {
-                blackScore += 20;  // Strong outpost
-            }
-        }
+    // mobility
+    eval_mid += bishmob * MOBILITY_BISHOP[0];
+    eval_end += bishmob * MOBILITY_BISHOP[1];
+    eval_mid += rookmob * MOBILITY_ROOK[0];
+    eval_end += rookmob * MOBILITY_ROOK[1];
+    // bishop pair
+    bool wbish_pair = wbish_on_w && wbish_on_b;
+    bool bbish_pair = bbish_on_w && bbish_on_b;
+    if (wbish_pair)
+    {
+        eval_mid += BISH_PAIR_WEIGHT[0];
+        eval_end += BISH_PAIR_WEIGHT[1];
     }
-    
-    // Evaluate bishop and knight coordination
-    // Bishops work well on open board, knights on closed positions
-    int whitePawnCount = chess::builtin::popcount(whitePawns);
-    int blackPawnCount = chess::builtin::popcount(blackPawns);
-    int totalPawns = whitePawnCount + blackPawnCount;
-    
-    if (totalPawns <= 8) {  // Open position
-        // Bishops are stronger in open positions
-        whiteScore += chess::builtin::popcount(whiteBishops) * 10;
-        blackScore += chess::builtin::popcount(blackBishops) * 10;
-    } else if (totalPawns >= 12) {  // Closed position
-        // Knights are stronger in closed positions
-        whiteScore += chess::builtin::popcount(whiteKnights) * 10;
-        blackScore += chess::builtin::popcount(blackKnights) * 10;
+    if (bbish_pair)
+    {
+        eval_mid -= BISH_PAIR_WEIGHT[0];
+        eval_end -= BISH_PAIR_WEIGHT[1];
     }
-    
-    return whiteScore - blackScore;
+    // convert perspective
+    if (!whiteturn)
+    {
+        eval_mid *= -1;
+        eval_end *= -1;
+    }
+    // King proximity bonus (if winning)
+    int king_dist = abs(wkr - bkr) + abs(wkf - bkf);
+    if (eval_mid >= 0)
+        eval_mid += KING_DIST_WEIGHT[0] * (14 - king_dist);
+    if (eval_end >= 0)
+        eval_end += KING_DIST_WEIGHT[1] * (14 - king_dist);
+    // Bishop corner (if winning)
+    int ourbish_on_w = (whiteturn) ? wbish_on_w : bbish_on_w;
+    int ourbish_on_b = (whiteturn) ? wbish_on_b : bbish_on_b;
+    int ekr = (whiteturn) ? bkr : wkr;
+    int ekf = (whiteturn) ? bkf : wkf;
+    int wtile_dist = std::min(ekf + (7 - ekr), (7 - ekf) + ekr); // to A8 and H1
+    int btile_dist = std::min(ekf + ekr, (7 - ekf) + (7 - ekr)); // to A1 and H8
+    if (eval_mid >= 0)
+    {
+        if (ourbish_on_w)
+            eval_mid += BISH_CORNER_WEIGHT[0] * (7 - wtile_dist);
+        if (ourbish_on_b)
+            eval_mid += BISH_CORNER_WEIGHT[0] * (7 - btile_dist);
+    }
+    if (eval_end >= 0)
+    {
+        if (ourbish_on_w)
+            eval_end += BISH_CORNER_WEIGHT[1] * (7 - wtile_dist);
+        if (ourbish_on_b)
+            eval_end += BISH_CORNER_WEIGHT[1] * (7 - btile_dist);
+    }
+    // apply phase
+    int eg_weight = 256 * std::max(0, 24 - phase) / 24;
+    int eval = ((256 - eg_weight) * eval_mid + eg_weight * eval_end) / 256;
+    // draw division
+    int wminor = wbish + wknight;
+    int bminor = bbish + bknight;
+    if (minor_only && wminor <= 2 && bminor <= 2)
+    {
+        if ((wminor == 1 && bminor == 1) ||                                     // 1 vs 1
+            ((wbish + bbish == 3) && (wminor + bminor == 3)) ||                 // 2B vs B
+            ((wknight == 2 && bminor <= 1) || (bknight == 2 && wminor <= 1)) || // 2N vs 0:1
+            (!wbish_pair && wminor == 2 && bminor == 1) ||                      // 2 vs 1, not bishop pair
+            (!bbish_pair && bminor == 2 && wminor == 1))
+            return eval / DRAW_DIVIDE_SCALE;
+    }
+    return eval;
 }
