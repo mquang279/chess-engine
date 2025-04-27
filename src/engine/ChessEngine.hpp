@@ -23,6 +23,10 @@ public:
     const int TIME_LIMIT = 10;
 
 private:
+    // Constants for searchMoves arrays
+    static constexpr int NUM_PLIES = 64;
+    static constexpr int NUM_MOVES = 256;
+
     struct SearchStats
     {
         int depth = 0;
@@ -39,7 +43,11 @@ private:
         }
     };
 
-    int negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes);
+    int negamax(chess::Board &board, int depth, int alpha, int beta,
+                uint64_t &nodes);
+
+    int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes);
+
 
     int evaluatePosition(const chess::Board &board);
 
@@ -49,6 +57,8 @@ private:
 
     // Random number generator for breaking ties or adding some randomness
     std::mt19937 rng;
+
+    std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 };
 
 #endif // CHESS_ENGINE_HPP

@@ -28,6 +28,13 @@ public:
         NONE
     };
 
+    // Arrays to hold piece values for both game phases
+    std::array<int, 6> mg_value;
+    std::array<int, 6> eg_value;
+
+    // Convert chess::PieceType to our internal PieceIndex
+    PieceIndex pieceTypeToIndex(chess::PieceType pt) const;
+
 private:
     // Piece values for middlegame and endgame
     static constexpr int MG_PAWN_VALUE = 82;
@@ -51,9 +58,6 @@ private:
     static constexpr int PHASE_QUEEN_VALUE = 4;
     static constexpr int TOTAL_PHASE = 24; // 16 for pawns + 4 for knights + 4 for bishops + 4 for rooks + 8 for queens
 
-    // Arrays to hold piece values for both game phases
-    std::array<int, 6> mg_value;
-    std::array<int, 6> eg_value;
 
     // Piece-square tables for middlegame and endgame
     std::array<std::array<int, 64>, 6> mg_pesto_table;
@@ -61,9 +65,6 @@ private:
 
     // Initialize the piece-square tables
     void initializeTables();
-
-    // Convert chess::PieceType to our internal PieceIndex
-    PieceIndex pieceTypeToIndex(chess::PieceType pt) const;
 
     int evaluatePassedPawns(const chess::Board &board, chess::Color color);
     int evaluatePawnStructure(const chess::Board &board, chess::Color color);

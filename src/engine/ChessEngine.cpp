@@ -145,7 +145,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     // Base case: reached leaf node or terminal position
     if (depth == 0 || board.isGameOver().first != chess::GameResultReason::NONE)
     {
-        return evaluatePosition(board);
+        return quiesence(board, alpha, beta, nodes);
     }
 
     chess::Movelist moves;
@@ -186,6 +186,59 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     }
 
     return bestScore;
+}
+
+int ChessEngine::quiesence(chess::Board &board, int alpha, int beta,
+    uint64_t &nodes) {
+    nodes++;
+
+    // Evaluate the current position
+    int stand_pat = pestoEval.evaluate(board);
+
+    // If the static evaluation is already worse than beta, prune this branch
+    if (stand_pat >= beta) {
+      return beta;
+    }
+
+    // Update alpha if the static evaluation is better
+    if (stand_pat > alpha) {
+      alpha = stand_pat;
+    }
+
+    // Generate all capture moves
+    chess::Movelist moves;
+    chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
+    //MVV-LVA
+    for (auto &move : moves) {
+      auto victim = board.at(move.to());
+      auto attacker = board.at(move.from());
+      auto victim_type = chess::utils::typeOfPiece(victim);
+      auto attacker_type = chess::utils::typeOfPiece(attacker);
+      move.setScore(pestoEval.mg_value[pestoEval.pieceTypeToIndex(victim_type)] * 10 +
+               (9 - pestoEval.mg_value[pestoEval.pieceTypeToIndex(attacker_type)]));
+    }
+    moves.sort();
+    for (int i = 0; i < moves.size(); i++) {
+      // Make the move
+      board.makeMove(moves[i]);
+
+      // Perform a recursive quiescence search
+      int score = -quiesence(board, -beta, -alpha, nodes);
+
+      // Undo the move
+      board.unmakeMove(moves[i]);
+
+      // Update alpha
+      if (score > alpha) {
+        // Beta cutoff
+        if (score >= beta) {
+          return beta;
+        }
+        alpha = score;
+      }
+    }
+
+    return alpha;
 }
 
 int ChessEngine::evaluatePosition(const chess::Board &board)
