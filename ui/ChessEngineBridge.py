@@ -133,6 +133,10 @@ class ChessEngineBridge:
         self.lib.get_side_to_move.argtypes = []
         self.lib.get_side_to_move.restype = ctypes.c_bool
         
+        # int get_evaluation()
+        self.lib.get_evaluation.argtypes = []
+        self.lib.get_evaluation.restype = ctypes.c_int
+        
         # Initialize the engine
         self.lib.create_engine()
         
@@ -206,3 +210,7 @@ class ChessEngineBridge:
     def get_side_to_move(self):
         """Get the side to move (True for white, False for black)"""
         return self.lib.get_side_to_move()
+        
+    def get_evaluation(self):
+        """Get the evaluation of the current position"""
+        return self.lib.get_evaluation()

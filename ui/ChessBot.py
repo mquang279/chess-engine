@@ -50,5 +50,14 @@ class ChessBot:
             return random.choice(legal_moves) if legal_moves else None
     
     def evaluate(self, board):
-        # This could be implemented by adding evaluation to the bridge if needed
-        return None
+        # Use our engine's evaluation function
+        if not self.engine:
+            return None
+            
+        try:
+            # Set the position and get evaluation
+            self.engine.set_position(board.fen())
+            return self.engine.get_evaluation()
+        except Exception as e:
+            print(f"Error getting evaluation from engine: {e}")
+            return None
