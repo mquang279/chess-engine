@@ -193,8 +193,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
             return 0;
         }
     }
-
-    int bestScore = std::numeric_limits<int>::min();
+    
     int original_alpha = alpha;
     for (int i = 0; i < moves.size(); i++)
     {
