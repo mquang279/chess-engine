@@ -1,12 +1,11 @@
 #include "ChessEngine.hpp"
 #include <algorithm>
-#include <ctime>
-#include <limits>
 #include <iomanip>
-#include <sstream>
+#include <ctime>
 
 ChessEngine::ChessEngine() : rng(static_cast<unsigned int>(std::time(nullptr)))
 {
+    // Initialize random number generator with current time
 }
 
 void ChessEngine::printSearchInfo(const SearchStats &stats)
@@ -51,7 +50,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
 
     // Start timing the entire search
     auto startTime = std::chrono::high_resolution_clock::now();
-    std::chrono::seconds timeLimit(TIME_LIMIT); // Use the TIME_LIMIT constant from the header
+    std::chrono::seconds timeLimit(TIME_LIMIT);
 
     // Iterative deepening - from depth 1 to MAX_DEPTH
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
@@ -74,13 +73,14 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             board.makeMove(move);
 
             uint64_t nodesSearched = 0;
-            int score = negamax(board, depth - 1, alpha, beta, nodesSearched);
+            int score = -negamax(board, depth - 1, -beta, -alpha, nodesSearched);
             stats.nodes += nodesSearched;
 
             board.unmakeMove(move);
 
-            if (score > bestScore)
-            {
+            if (score > bestScore ||
+                (score == bestScore && std::uniform_int_distribution<>(0, 100)(rng) < 10))
+            { // Small chance to pick equal moves for variety
                 bestScore = score;
                 bestMove = move;
                 alpha = std::max(alpha, bestScore);
@@ -142,46 +142,79 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 {
     nodes++;
 
-    // Base case: reached leaf node or terminal position
-    if (depth == 0 || board.isGameOver().first != chess::GameResultReason::NONE)
+    // Base case: if we reached the bottom of the search, evaluate the position
+    if (depth == 0)
     {
         return evaluatePosition(board);
     }
 
+    // Check for draw by repetition or fifty-move rule
+    if (board.isRepetition() || board.isHalfMoveDraw())
+    {
+        return 0; // Draw evaluation is 0
+    }
+
+    // Generate legal moves
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
 
-    // No legal moves (checkmate or stalemate)
+    // Check for checkmate or stalemate
     if (moves.empty())
     {
-        // If in check, it's a checkmate
         if (board.inCheck())
         {
-            return -10000 + depth; // Prefer shorter mates: lower depth = closer mate
+            // Checkmate: return worst possible score, adjusted for depth
+            // We add depth to prefer shorter paths to mate
+            return -30000 + depth;
         }
         else
         {
-            return 0; // Stalemate is a draw (0)
+            // Stalemate: return draw score
+            return 0;
         }
     }
 
-    int bestScore = std::numeric_limits<int>::min();
-
-    for (int i = 0; i < moves.size(); i++)
+    // Simple move ordering: captures first
+    // This significantly improves alpha-beta pruning
+    for (int i = 0; i < moves.size(); ++i)
     {
-        board.makeMove(moves[i]);
-        // Negamax recursion with negated alpha/beta window and negated return value
+        chess::Move &move = moves[i];
+        int score = 0;
+
+        if (board.isCapture(move))
+        {
+            score = 10000;
+        }
+
+        move.setScore(score);
+    }
+
+    // Sort the moves by score in descending order
+    moves.sort();
+
+    int bestScore = -30001; // Worst possible score
+
+    // Try each move and recursively evaluate the resulting position
+    for (const auto &move : moves)
+    {
+        // Make the move on the board
+        board.makeMove(move);
+
+        // Recursive call with negated bounds (negamax)
         int score = -negamax(board, depth - 1, -beta, -alpha, nodes);
-        board.unmakeMove(moves[i]);
+
+        // Unmake the move to restore the board
+        board.unmakeMove(move);
 
         // Update best score
         bestScore = std::max(bestScore, score);
 
-        // Update alpha for pruning
+        // Alpha-beta pruning
         alpha = std::max(alpha, score);
         if (alpha >= beta)
         {
-            break; // Beta cutoff
+            // Beta cutoff - the opponent won't allow this position
+            break;
         }
     }
 
@@ -190,6 +223,6 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 
 int ChessEngine::evaluatePosition(const chess::Board &board)
 {
-    // Use Pesto's evaluation function
-    return pestoEval.evaluate(board);
+    // Use our evaluation function
+    return evaluation.evaluate(board);
 }
