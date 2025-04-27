@@ -18,10 +18,14 @@ public:
     chess::Move getBestMove(chess::Board &board);
 
     static constexpr int MAX_DEPTH = 5;
-
     static constexpr int TIME_LIMIT = 5;
+    static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
 
 private:
+    // Constants for searchMoves arrays
+    static constexpr int NUM_PLIES = 64;
+    static constexpr int NUM_MOVES = 256;
+
     struct SearchStats
     {
         int depth = 0;
@@ -38,7 +42,14 @@ private:
         }
     };
 
-    int negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes);
+    int negamax(chess::Board &board, int depth, int alpha, int beta,
+                uint64_t &nodes);
+
+    int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes);
+
+    void orderMoves(chess::Board &board, chess::Movelist &moves);
+
+    void scoreMoves(const chess::Board &board, chess::Move &move);
 
     int evaluatePosition(const chess::Board &board);
 
@@ -47,6 +58,8 @@ private:
     Evaluation evaluation;
 
     std::mt19937 rng;
+
+    std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 };
 
 #endif // CHESS_ENGINE_HPP

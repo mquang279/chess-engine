@@ -1,7 +1,10 @@
 #include "ChessEngine.hpp"
+
+#include "See.hpp"
+
 #include <algorithm>
-#include <iomanip>
 #include <ctime>
+#include <iomanip>
 
 ChessEngine::ChessEngine() : rng(static_cast<unsigned int>(std::time(nullptr)))
 {
@@ -219,6 +222,84 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     }
 
     return bestScore;
+}
+
+int ChessEngine::quiesence(chess::Board &board, int alpha, int beta,
+                           uint64_t &nodes) {
+  nodes++;
+
+  // Evaluate the current position
+  int stand_pat = evaluation.evaluate(board);
+
+  // If the static evaluation is already worse than beta, prune this branch
+  if (stand_pat >= beta) {
+    return beta;
+  }
+
+  // Update alpha if the static evaluation is better
+  if (stand_pat > alpha) {
+    alpha = stand_pat;
+  }
+
+  // Generate all capture moves
+  chess::Movelist moves;
+  chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
+  orderMoves(board, moves);
+  for (int i = 0; i < moves.size(); i++) {
+    // Make the move
+    board.makeMove(moves[i]);
+
+    if (moves[i].score()<GOOD_CAPTURE_WEIGHT && !board.inCheck()) {
+      board.unmakeMove(moves[i]);
+      continue;
+    }
+
+    // Perform a recursive quiescence search
+    int score = -quiesence(board, -beta, -alpha, nodes);
+
+    // Undo the move
+    board.unmakeMove(moves[i]);
+
+    // Update alpha
+    if (score > alpha) {
+      // Beta cutoff
+      if (score >= beta) {
+        return beta;
+      }
+      alpha = score;
+    }
+  }
+
+  return alpha;
+}
+
+void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves)
+{
+    for (chess::Move &move : moves)
+        scoreMoves(board, move);
+    moves.sort();
+}
+
+void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
+{
+    //PV move
+
+    int16_t score = 0;
+    int from = (int)board.at(move.from());
+    int to = (int)board.at(move.to());
+    if (board.isCapture(move)) {
+        score += abs(SEE::PIECE_VALUES[to]) - (from%6);    // MVV/LVA
+        score += SEE::isGoodCapture(move, board, -12) *
+                                            ChessEngine::GOOD_CAPTURE_WEIGHT;
+    } else {
+        //killer and history
+        score += 0;
+    }
+
+    if (move.typeOf() == chess::Move::PROMOTION)
+        score += abs(SEE::PIECE_VALUES[(int)move.promotionType()]);
+
+    move.setScore(score);
 }
 
 int ChessEngine::evaluatePosition(const chess::Board &board)
