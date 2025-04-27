@@ -10,7 +10,7 @@ ChessEngine::ChessEngine()
       tt(64)
 {}
 
-void ChessEngine::printSearchInfo(const SearchStats &stats)
+void ChessEngine::printSearchInfo(const SearchStats &stats, const TTStats &tt_stats) 
 {
     float timeInSec = stats.duration.count() / 1000.0f;
 
@@ -27,6 +27,13 @@ void ChessEngine::printSearchInfo(const SearchStats &stats)
     {
         std::cout << ", Best move: " << stats.bestMove << std::endl;
     }
+
+    std::cout << "Transposition Table Stats: "
+                        << "Size: " << tt_stats.size << "  "
+                        << "Capacity: " << tt_stats.capacity << "  "
+                        << "Usage: " << std::fixed << std::setprecision(2) << tt_stats.usage << "%  "
+                        << "Hit Rate: " << tt_stats.hit_rate << "%  "
+                        << std::endl;
 }
 
 chess::Move ChessEngine::getBestMove(chess::Board &board)
@@ -99,21 +106,14 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
                 stats.duration = std::chrono::duration_cast<std::chrono::milliseconds>(depthEndTime - depthStartTime);
                 stats.score = bestScore;
                 stats.bestMove = bestMove;
-                printSearchInfo(stats);
+
+                auto tt_stats = tt.get_stats();
+
+                printSearchInfo(stats, tt_stats);
 
                 // Print total search time
                 auto totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(elapsedTime);
                 std::cout << "Total search time: " << totalDuration.count() << " ms" << std::endl;
-
-                // Print transposition table stats
-                auto tt_stats = tt.get_stats();
-                std::cout << "Transposition Table Stats: "
-                        << "Size: " << tt_stats.size << "  "
-                        << "Capacity: " << tt_stats.capacity << "  "
-                        << "Usage: " << std::fixed << std::setprecision(2) << tt_stats.usage << "%  "
-                        << "Hit Rate: " << tt_stats.hit_rate << "%  "
-                        << "\n";
-
 
                 return bestMove != chess::Move::NULL_MOVE ? bestMove : previousBestMove;
             }
@@ -125,8 +125,10 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         stats.score = bestScore;
         stats.bestMove = bestMove;
 
+        auto tt_stats = tt.get_stats();
+
         // Print info for this depth
-        printSearchInfo(stats);
+        printSearchInfo(stats, tt_stats);
 
         // Save the best move from this depth as our current best
         previousBestMove = bestMove;

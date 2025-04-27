@@ -44,7 +44,7 @@ private:
 
     int evaluatePosition(const chess::Board &board);
 
-    void printSearchInfo(const SearchStats &stats);
+    void printSearchInfo(const SearchStats &stats, const TTStats &tt_stats);
 
     PestoEvaluation pestoEval;
 
