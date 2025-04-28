@@ -238,33 +238,87 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
     int alphaOriginal = alpha;
     chess::Move bestMove = chess::Move::NULL_MOVE;
 
+    // Static evaluation for pruning decisions
+    int staticEval = evaluatePosition(board);
+    bool improving = false;
+
+    // Track if position is improving compared to previous positions
+    // This helps make pruning more accurate
+    if (depth >= 2)
+    {
+        improving = staticEval > alpha;
+    }
+
+    // Calculate maximum number of moves to consider before pruning
+    // More moves allowed at deeper depths
+    int lmpLimit = LMP_BASE + LMP_DEPTH_FACTOR * depth;
+
+    // Calculate futility margin based on depth and improving status
+    int futilityMargin = FUTILITY_MARGIN_BASE + FUTILITY_MARGIN_MULTIPLIER * depth;
+    if (!improving)
+    {
+        futilityMargin += FUTILITY_MARGIN_BASE; // Higher margin for non-improving positions
+    }
+
     // Iterate through each move
     for (int i = 0; i < moves.size(); i++)
     {
         chess::Move move = moves[i];
 
-        // Late Move Reduction
-        bool isReduced = false;
         bool isCapture = board.at(move.to()) != chess::Piece::NONE;
         bool isPromotion = move.typeOf() == chess::Move::PROMOTION;
-        bool givesCheck = false;
+
+        // Late Move Pruning (LMP) - Skip quiet moves after trying several
+        // Only for shallow depths and quiet moves
+        if (depth <= 3 && i >= lmpLimit && !isCapture && !isPromotion && !board.inCheck())
+        {
+            continue; // Skip this quiet move entirely
+        }
 
         // Make the move
         board.makeMove(move);
 
         // Check if this move gives check
-        givesCheck = board.inCheck();
+        bool givesCheck = board.inCheck();
 
-        // Late move reduction for quiet moves after we've searched several moves
-        int newDepth = depth - 1;
 
-        // Perform late move reduction for quiet moves after first few moves
-        if (depth >= 3 && i >= 4 && !isCapture && !isPromotion && !givesCheck)
+        // Futility Pruning - Skip moves unlikely to improve alpha
+        if (depth <= 3 && !isCapture && !isPromotion && !givesCheck && !board.inCheck())
         {
-            isReduced = true;
-            newDepth = depth - 2; // Reduce search depth
+            // Skip moves that can't possibly improve alpha even with a generous margin
+            if (staticEval + futilityMargin <= alpha)
+            {
+                board.unmakeMove(move);
+                continue;
+            }
         }
 
+        // Late Move Reduction (LMR) - Search quiet later moves with reduced depth
+        bool isReduced = false;
+        int newDepth = depth - 1;
+
+        // Apply LMR for quiet moves after we've searched several promising moves
+        if (depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES && !isCapture && !isPromotion && !givesCheck && !board.inCheck())
+        {
+            // Calculate reduction amount based on depth and move index
+            // Later moves get reduced more, deeper searches get reduced more
+            int reduction = 1 + (depth / 6) + (i / 6);
+
+            // Cap reduction to avoid over-reduction
+            if (reduction >= depth)
+                reduction = depth - 1;
+
+            // Less reduction in improving positions
+            if (improving && reduction > 1)
+                reduction--;
+
+            isReduced = true;
+            newDepth = depth - reduction;
+
+            // Ensure minimum search depth of 1
+            if (newDepth < 1)
+                newDepth = 1;
+        }
         // Recursive negamax call with negated bounds
         int score;
 
