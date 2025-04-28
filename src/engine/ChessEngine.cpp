@@ -146,16 +146,18 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
 {
     nodes++; // Increment node counter
 
-    // Mate distance pruning - useful to prevent infinite loops and prioritize shorter mates
-    alpha = std::max(alpha, -CHECKMATE_SCORE + ply);
-    beta = std::min(beta, CHECKMATE_SCORE - ply - 1);
+    // Mate distance pruning - revised implementation
+    if (alpha < -CHECKMATE_SCORE + ply)
+        alpha = -CHECKMATE_SCORE + ply;
+    if (beta > CHECKMATE_SCORE - ply)
+        beta = CHECKMATE_SCORE - ply;
     if (alpha >= beta)
         return alpha;
 
     // Check for immediate draw conditions
     if (board.isInsufficientMaterial() || board.isRepetition(2) || board.isHalfMoveDraw())
     {
-        return 0; // Draw
+        return DRAW_SCORE; // Draw
     }
 
     // Base case: leaf node (evaluate position or use quiescence search)
@@ -181,11 +183,12 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
     {
         if (board.inCheck())
         {
-            return -CHECKMATE_SCORE + ply; // Checkmate, with distance-to-mate adjustment
+            // Checkmate - make closer mates have a higher score
+            return -CHECKMATE_SCORE + ply;
         }
         else
         {
-            return 0; // Stalemate
+            return DRAW_SCORE; // Stalemate
         }
     }
 
@@ -278,16 +281,16 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
 {
     nodes++; // Increment node counter
     
-    // Mate distance pruning - useful even in quiescence search
-    alpha = std::max(alpha, -CHECKMATE_SCORE + ply);
-    beta = std::min(beta, CHECKMATE_SCORE - ply - 1);
+    // Mate distance pruning - revised implementation
+    if (alpha < -CHECKMATE_SCORE + ply) alpha = -CHECKMATE_SCORE + ply;
+    if (beta > CHECKMATE_SCORE - ply) beta = CHECKMATE_SCORE - ply;
     if (alpha >= beta)
         return alpha;
         
     // Quick check for draw conditions
     if (board.isInsufficientMaterial() || board.isRepetition(1) || board.isHalfMoveDraw())
     {
-        return 0; // Draw
+        return DRAW_SCORE; // Draw
     }
     
     // Maximum quiescence search depth safety check

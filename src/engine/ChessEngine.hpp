@@ -29,7 +29,10 @@ public:
     static constexpr int TIME_LIMIT = 10;
     static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
     static constexpr int INF = 32000;
-    static constexpr int CHECKMATE_SCORE = -31999;
+    // Define a mate score that's well below the infinity limit but leaves room for ply adjustment
+    static constexpr int MATE_VALUE = 30000;
+    static constexpr int CHECKMATE_SCORE = MATE_VALUE;
+    static constexpr int DRAW_SCORE = 0;
 
 private:
     // Constants for searchMoves arrays
