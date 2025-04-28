@@ -1,8 +1,9 @@
 #include "ChessEngine.hpp"
 #include "See.hpp"
+#include <iomanip>
 
 ChessEngine::ChessEngine()
-    : rng(std::random_device{}())
+    : rng(std::random_device{}()), tt(64)
 {
     initializeOpeningBook();
 }
@@ -32,6 +33,10 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             return bookMove;
         }
     }
+
+    // Increment transposition table age for new move
+    tt.increment_age();
+
     // Start timer
     auto startTime = std::chrono::steady_clock::now();
 
@@ -74,8 +79,8 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         int alpha, beta;
         if (depth == 1)
         {
-            alpha = -std::numeric_limits<int>::max() + 1;
-            beta = std::numeric_limits<int>::max();
+            alpha = -32000;
+            beta = 32000;
         }
         else
         {
@@ -97,13 +102,13 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             if (score <= alpha)
             {
                 // Failed low, widen window and retry
-                alpha = -std::numeric_limits<int>::max() + 1;
+                alpha = -32000;
                 windowFailed = true;
             }
             else if (score >= beta)
             {
                 // Failed high, widen window and retry
-                beta = std::numeric_limits<int>::max();
+                beta = 32000;
                 windowFailed = true;
             }
             else
@@ -114,7 +119,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             }
 
             // Break out if we've widened both bounds
-            if (alpha == -std::numeric_limits<int>::max() + 1 && beta == std::numeric_limits<int>::max())
+            if (alpha == -32000 && beta == 32000)
             {
                 windowFailed = false;
             }
@@ -148,6 +153,15 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         // Print search information
         printSearchInfo(stats);
 
+        // Print TT stats
+        TTStats ttStats = tt.get_stats();
+        std::cout << "TT Stats - Depth " << depth << ": "
+                  << "Size: " << ttStats.size << "/" << ttStats.capacity
+                  << ", Usage: " << std::fixed << std::setprecision(2) << ttStats.usage << "%"
+                  << ", Hit Rate: " << ttStats.hit_rate << "%"
+                  << ", Collisions: " << ttStats.collisions
+                  << std::endl;
+
         // Check if we've exceeded the time limit
         if (elapsed.count() > TIME_LIMIT * 1000 / 2) // Use half the available time for safety
         {
@@ -179,9 +193,18 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 {
     nodes++; // Increment node counter
 
+    // Transposition table lookup
+    uint64_t hashKey = board.hash();
+    auto [found, score] = tt.lookup(hashKey, depth, alpha, beta);
+    if (found)
+    {
+        return score;
+    }
+
     // Check for immediate draw conditions
     if (board.isInsufficientMaterial() || board.isRepetition(2) || board.isHalfMoveDraw())
     {
+        tt.store(hashKey, 0, TTFlag::EXACT_SCORE, depth);
         return 0; // Draw
     }
 
@@ -195,14 +218,14 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     if (depth >= 3 && !board.inCheck() && hasNonPawnMaterial(board))
     {
         // Adaptive reduction based on depth
-        int R = 3 + (depth / 6);  // R=3 for depths 3-5, R=4 for depths 6-11, etc.
-        
+        int R = 3 + (depth / 6); // R=3 for depths 3-5, R=4 for depths 6-11, etc.
+
         board.makeNullMove();
 
         // Null-window search with reduced depth
         int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, nodes);
 
-        board.unmakeNullMove(); 
+        board.unmakeNullMove();
 
         // Avoid pruning near mate scores
         if (nullScore >= beta && std::abs(nullScore) < 9000)
@@ -214,11 +237,11 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
                 int verificationDepth = depth / 2;
                 int verificationScore = negamax(board, verificationDepth, alpha, beta, nodes);
                 if (verificationScore >= beta)
-                    return beta;  // Verified cutoff
+                    return beta; // Verified cutoff
             }
             else
             {
-                return beta;  // Beta cutoff (fail-high)
+                return beta; // Beta cutoff (fail-high)
             }
         }
     }
@@ -232,7 +255,9 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     {
         if (board.inCheck())
         {
-            return -std::numeric_limits<int>::max() + 1; // Checkmate, with distance-to-mate adjustment
+            int score = -std::numeric_limits<int>::max() + 1;
+            tt.store(hashKey, score, TTFlag::EXACT_SCORE, depth);
+            return score; // Checkmate, with distance-to-mate adjustment
         }
         else
         {
@@ -243,23 +268,24 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     // Order moves for better pruning
     orderMoves(board, moves);
 
-    int bestScore = -std::numeric_limits<int>::max();
+    int bestScore = -32000;
+    int alphaOriginal = alpha;
 
     // Static evaluation for pruning decisions
     int staticEval = evaluatePosition(board);
     bool improving = false;
-    
+
     // Track if position is improving compared to previous positions
     // This helps make pruning more accurate
     if (depth >= 2)
     {
         improving = staticEval > alpha;
     }
-    
+
     // Calculate maximum number of moves to consider before pruning
     // More moves allowed at deeper depths
     int lmpLimit = LMP_BASE + LMP_DEPTH_FACTOR * depth;
-    
+
     // Calculate futility margin based on depth and improving status
     int futilityMargin = FUTILITY_MARGIN_BASE + FUTILITY_MARGIN_MULTIPLIER * depth;
     if (!improving)
@@ -274,7 +300,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 
         bool isCapture = board.at(move.to()) != chess::Piece::NONE;
         bool isPromotion = move.typeOf() == chess::Move::PROMOTION;
-        
+
         // Late Move Pruning (LMP) - Skip quiet moves after trying several
         // Only for shallow depths and quiet moves
         if (depth <= 3 && i >= lmpLimit && !isCapture && !isPromotion && !board.inCheck())
@@ -307,18 +333,18 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
             // Calculate reduction amount based on depth and move index
             // Later moves get reduced more, deeper searches get reduced more
             int reduction = 1 + (depth / 6) + (i / 6);
-            
+
             // Cap reduction to avoid over-reduction
             if (reduction >= depth)
                 reduction = depth - 1;
-                
+
             // Less reduction in improving positions
             if (improving && reduction > 1)
                 reduction--;
-                
+
             isReduced = true;
             newDepth = depth - reduction;
-            
+
             // Ensure minimum search depth of 1
             if (newDepth < 1)
                 newDepth = 1;
@@ -332,7 +358,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
         {
             // Null-window search with reduced depth
             score = -negamax(board, newDepth, -alpha - 1, -alpha, nodes);
-            
+
             // If the reduced search looks promising, do a full-depth search
             if (score > alpha)
             {
@@ -362,10 +388,19 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
             // If we found a move that's too good, no need to search further
             if (alpha >= beta)
             {
-                // Store killer move here (if implemented)
+                tt.store(hashKey, beta, TTFlag::LOWER_BOUND, depth);
                 return beta; // Beta cutoff (fail-high)
             }
         }
+    }
+    // Store result in transposition table
+    if (alpha > alphaOriginal)
+    {
+        tt.store(hashKey, bestScore, TTFlag::EXACT_SCORE, depth);
+    }
+    else
+    {
+        tt.store(hashKey, bestScore, TTFlag::UPPER_BOUND, depth);
     }
 
     return bestScore;
@@ -374,30 +409,38 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes)
 {
     nodes++; // Increment node counter
-
-    // Stand pat (evaluate current position)
-    int standPat = evaluatePosition(board);
-
-    // Check if current position is already better than beta
-    if (standPat >= beta)
-        return beta;
-
-    // Update alpha if stand-pat score is better
-    if (standPat > alpha)
-        alpha = standPat;
-
-    // Generate only capture moves
-    chess::Movelist moves;
-    chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
-
-    // Score and sort capture moves
-    for (auto &move : moves)
+    bool inCheck = board.inCheck();
+    uint64_t hashKey = board.hash();
+    auto [hit, score] = tt.lookup(hashKey, 0, alpha, beta);
+    if (hit)
     {
-        scoreMoves(board, move);
+        return score;
     }
-    moves.sort();
 
-    // Iterate through captures
+    if (!inCheck)
+    {
+        int standPat = evaluatePosition(board);
+        if (standPat >= alpha)
+        {
+            if (standPat >= beta)
+                return beta;
+            tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
+            alpha = standPat;
+        }
+    }
+
+    chess::Movelist moves;
+    // Stand pat (evaluate current position)
+    if (inCheck)
+    {
+        chess::movegen::legalmoves(moves, board);
+    }
+    else
+    {
+        chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
+        orderMoves(board, moves);
+    }
+
     for (const auto &move : moves)
     {
         // Static Exchange Evaluation (SEE) pruning for bad captures
@@ -415,13 +458,20 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
 
         // Beta cutoff
         if (score >= beta)
+        {
+            tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
             return beta;
-
+        }
         // Update alpha
         if (score > alpha)
             alpha = score;
     }
+    if (inCheck && moves.size() == 0)
+    {
+        return -std::numeric_limits<int>::max(); // Checkmate
+    }
 
+    tt.store(hashKey, alpha, TTFlag::EXACT_SCORE, 0);
     return alpha;
 }
 
@@ -449,13 +499,26 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
         chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
 
         // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
-        score = 6 * static_cast<int>(captured) - static_cast<int>(attacker) + 10;
+        score = SEE::getMvvLvaScore(captured, attacker);
 
         // Add bonus for good captures based on SEE
-        if (SEE::isGoodCapture(move, board, 0))
+        if (score < 6000)
         {
-            score += GOOD_CAPTURE_WEIGHT;
+            if (SEE::isGoodCapture(move, board, 0))
+            {
+                score += GOOD_CAPTURE_WEIGHT;
+            }
+            else
+            {
+                score = 0;
+            }
         }
+    }
+    else if (move.typeOf() == chess::Move::ENPASSANT)
+    {
+        score = SEE::getMvvLvaScore(chess::PieceType::PAWN,
+                                    chess::PieceType::PAWN) +
+                1000;
     }
 
     // Score promotions
@@ -463,7 +526,7 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
     {
         // Higher score for queen promotions
         if (move.promotionType() == chess::PieceType::QUEEN)
-            score += 900;
+            score += 100000;
         else if (move.promotionType() == chess::PieceType::ROOK)
             score += 500;
         else if (move.promotionType() == chess::PieceType::BISHOP ||
@@ -505,9 +568,9 @@ bool ChessEngine::hasNonPawnMaterial(const chess::Board &board) const
 
     // Check for pieces other than king and pawns (excluding pawns)
     chess::Bitboard pieces = board.pieces(chess::PieceType::KNIGHT, side) |
-                            board.pieces(chess::PieceType::BISHOP, side) |
-                            board.pieces(chess::PieceType::ROOK, side) |
-                            board.pieces(chess::PieceType::QUEEN, side);
-    
+                             board.pieces(chess::PieceType::BISHOP, side) |
+                             board.pieces(chess::PieceType::ROOK, side) |
+                             board.pieces(chess::PieceType::QUEEN, side);
+
     return pieces != 0;
 }

@@ -4,6 +4,7 @@
 #include "../chess.hpp"
 #include "Evaluation.hpp"
 #include "OpeningMove.hpp"
+#include "transposition_table.hpp"
 #include <vector>
 #include <chrono>
 #include <iostream>
@@ -24,9 +25,11 @@ public:
 
     void enableOpeningBook(bool enable) { useOpeningBook = enable; }
 
-    static constexpr int MAX_DEPTH = 6;
-    static constexpr int TIME_LIMIT = 5;
+    static constexpr int MAX_DEPTH = 7;
+    static constexpr int TIME_LIMIT = 10;
     static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
+    static constexpr int INF = 32000;
+    static constexpr int CHECKMATE_SCORE = -31999;
 
     // Constants for pruning techniques
     static constexpr int FUTILITY_MARGIN_BASE = 125;  // Base margin for futility pruning (centipawns)
@@ -80,6 +83,8 @@ private:
     std::mt19937 rng;
 
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
+
+    TranspositionTable tt;
 };
 
 #endif // CHESS_ENGINE_HPP

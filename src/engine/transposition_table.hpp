@@ -16,6 +16,7 @@ struct TranspositionEntry {
     int score;
     TTFlag flag;
     int depth;
+    int age;
 };
 
 struct TTStats {
@@ -35,6 +36,7 @@ public:
     void store(uint64_t hash_key, int score, TTFlag flag, int depth);
     std::tuple<bool, int> lookup(uint64_t hash_key, int depth, int alpha, int beta);
     TTStats get_stats() const;
+    void increment_age();
 
 private:
     std::unordered_map<uint64_t, TranspositionEntry> table;
@@ -42,6 +44,7 @@ private:
     size_t misses = 0;
     size_t collisions = 0;
     size_t capacity; 
+    int current_age = 0;
 };
 
 #endif // TRANSPOSITION_TABLE_HPP
