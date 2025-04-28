@@ -35,6 +35,15 @@ public:
     static constexpr int DRAW_SCORE = 0;
     static constexpr int DELTA = 200;
  
+
+    // Constants for pruning techniques
+    static constexpr int FUTILITY_MARGIN_BASE = 125;  // Base margin for futility pruning (centipawns)
+    static constexpr int FUTILITY_MARGIN_MULTIPLIER = 100;  // Multiplier per depth
+    static constexpr int LMP_BASE = 3;  // Base move count for late move pruning
+    static constexpr int LMP_DEPTH_FACTOR = 3;  // Additional moves per depth level
+    static constexpr int LMR_MIN_DEPTH = 3;  // Minimum depth for late move reduction
+    static constexpr int LMR_MIN_MOVES = 3;  // Minimum moves before reduction
+
 private:
     // Constants for searchMoves arrays
     static constexpr int NUM_PLIES = 64;
@@ -71,6 +80,15 @@ private:
     int evaluatePosition(const chess::Board &board);
 
     void printSearchInfo(const SearchStats &stats);
+
+    // Null move pruning helper functions
+    bool hasNonPawnMaterial(const chess::Board &board) const;
+
+    bool isEndGame(const chess::Board &board) const;
+
+    bool isPossibleZugzwang(const chess::Board &board) const;
+
+    bool verifyNullMovePrune(chess::Board &board, int depth, int beta, uint64_t &nodes);
 
     Evaluation evaluation;
 

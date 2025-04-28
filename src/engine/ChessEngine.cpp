@@ -192,6 +192,48 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
         }
     }
 
+    bool inEndgame = isEndGame(board);
+    bool inCheck   = board.inCheck();
+    bool possibleZ = isPossibleZugzwang(board);
+
+    int eval = evaluation.evaluate(board);
+    int materialAdv = std::abs(eval) / 100;
+
+
+    //Null move pruning
+    if (depth >= 3 && !inCheck && hasNonPawnMaterial(board) && !possibleZ && std::abs(eval) < 9000) 
+    {
+        // Static Null Move Pruning (SNMP) - early pruning based on static evaluation margin
+        if (eval >= beta + 120 * depth) {
+            return beta;  // Static null move pruning cutoff
+        }
+        
+        // Adaptive reduction based on position evaluation and material advantage
+        int R = 3 + depth / 4 + std::min(3, materialAdv / 200); 
+        if (inEndgame) R = std::max(2, R - 1);
+        if (materialAdv > 500) R++; // Extra reduction with big material advantage
+        R = std::min(R, depth - 1); // Don't reduce beyond depth 1
+        R = std::min(R, 4);         // Maximum reduction of 4 plies
+        
+        board.makeNullMove();
+        int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, ply + 1, nodes); 
+        board.unmakeNullMove();
+
+        if (nullScore >= beta) {
+            // Enhanced verification search for positions that might be zugzwang
+            if (depth >= 5 && (inEndgame || std::abs(eval - beta) < 100)) {
+                // Use a deeper verification search for critical positions
+                if (verifyNullMovePrune(board, depth, beta, nodes)) {
+                    return beta;
+                }
+            } 
+            else {
+                // More confident positions - can safely return beta
+                return beta;
+            }
+        }
+    }
+
     // Order moves for better pruning
     orderMoves(board, moves);
 
@@ -199,33 +241,87 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
     int alphaOriginal = alpha;
     chess::Move bestMove = chess::Move::NULL_MOVE;
 
+    // Static evaluation for pruning decisions
+    int staticEval = evaluatePosition(board);
+    bool improving = false;
+
+    // Track if position is improving compared to previous positions
+    // This helps make pruning more accurate
+    if (depth >= 2)
+    {
+        improving = staticEval > alpha;
+    }
+
+    // Calculate maximum number of moves to consider before pruning
+    // More moves allowed at deeper depths
+    int lmpLimit = LMP_BASE + LMP_DEPTH_FACTOR * depth;
+
+    // Calculate futility margin based on depth and improving status
+    int futilityMargin = FUTILITY_MARGIN_BASE + FUTILITY_MARGIN_MULTIPLIER * depth;
+    if (!improving)
+    {
+        futilityMargin += FUTILITY_MARGIN_BASE; // Higher margin for non-improving positions
+    }
+
     // Iterate through each move
     for (int i = 0; i < moves.size(); i++)
     {
         chess::Move move = moves[i];
 
-        // Late Move Reduction
-        bool isReduced = false;
         bool isCapture = board.at(move.to()) != chess::Piece::NONE;
         bool isPromotion = move.typeOf() == chess::Move::PROMOTION;
-        bool givesCheck = false;
+
+        // Late Move Pruning (LMP) - Skip quiet moves after trying several
+        // Only for shallow depths and quiet moves
+        if (depth <= 3 && i >= lmpLimit && !isCapture && !isPromotion && !board.inCheck())
+        {
+            continue; // Skip this quiet move entirely
+        }
 
         // Make the move
         board.makeMove(move);
 
         // Check if this move gives check
-        givesCheck = board.inCheck();
+        bool givesCheck = board.inCheck();
 
-        // Late move reduction for quiet moves after we've searched several moves
-        int newDepth = depth - 1;
 
-        // Perform late move reduction for quiet moves after first few moves
-        if (depth >= 3 && i >= 4 && !isCapture && !isPromotion && !givesCheck)
+        // Futility Pruning - Skip moves unlikely to improve alpha
+        if (depth <= 3 && !isCapture && !isPromotion && !givesCheck && !board.inCheck())
         {
-            isReduced = true;
-            newDepth = depth - 2; // Reduce search depth
+            // Skip moves that can't possibly improve alpha even with a generous margin
+            if (staticEval + futilityMargin <= alpha)
+            {
+                board.unmakeMove(move);
+                continue;
+            }
         }
 
+        // Late Move Reduction (LMR) - Search quiet later moves with reduced depth
+        bool isReduced = false;
+        int newDepth = depth - 1;
+
+        // Apply LMR for quiet moves after we've searched several promising moves
+        if (depth >= LMR_MIN_DEPTH && i >= LMR_MIN_MOVES && !isCapture && !isPromotion && !givesCheck && !board.inCheck())
+        {
+            // Calculate reduction amount based on depth and move index
+            // Later moves get reduced more, deeper searches get reduced more
+            int reduction = 1 + (depth / 6) + (i / 6);
+
+            // Cap reduction to avoid over-reduction
+            if (reduction >= depth)
+                reduction = depth - 1;
+
+            // Less reduction in improving positions
+            if (improving && reduction > 1)
+                reduction--;
+
+            isReduced = true;
+            newDepth = depth - reduction;
+
+            // Ensure minimum search depth of 1
+            if (newDepth < 1)
+                newDepth = 1;
+        }
         // Recursive negamax call with negated bounds
         int score;
 
@@ -486,3 +582,100 @@ void ChessEngine::printSearchInfo(const SearchStats &stats)
               << std::endl;
 }
 
+bool ChessEngine::hasNonPawnMaterial(const chess::Board &board) const
+{
+    chess::Color side = board.sideToMove();
+
+    // Non-pawn material: knight, bishop, rook, queen
+    chess::Bitboard pieces = board.pieces(chess::PieceType::KNIGHT, side) |
+                             board.pieces(chess::PieceType::BISHOP, side) |
+                             board.pieces(chess::PieceType::ROOK, side) |
+                             board.pieces(chess::PieceType::QUEEN, side);
+
+    return pieces != 0;
+}
+
+
+bool ChessEngine::isEndGame(const chess::Board &board) const
+{
+    chess::Color us = board.sideToMove();
+    chess::Color them = (us == chess::Color::WHITE ? chess::Color::BLACK : chess::Color::WHITE);
+
+    int ourCount = chess::builtin::popcount(
+        board.pieces(chess::PieceType::KNIGHT, us) |
+        board.pieces(chess::PieceType::BISHOP, us) |
+        board.pieces(chess::PieceType::ROOK, us) |
+        board.pieces(chess::PieceType::QUEEN, us));
+
+    int theirCount = chess::builtin::popcount(
+        board.pieces(chess::PieceType::KNIGHT, them) |
+        board.pieces(chess::PieceType::BISHOP, them) |
+        board.pieces(chess::PieceType::ROOK, them) |
+        board.pieces(chess::PieceType::QUEEN, them));
+
+    bool noQueens = (board.pieces(chess::PieceType::QUEEN, chess::Color::WHITE) == 0 &&
+                     board.pieces(chess::PieceType::QUEEN, chess::Color::BLACK) == 0);
+
+    return noQueens || (ourCount < 3 && theirCount < 3);
+}
+
+
+bool ChessEngine::isPossibleZugzwang(const chess::Board &board) const
+{
+    chess::Color us = board.sideToMove();
+
+    // Count non-pawn pieces and pawns
+    chess::Bitboard nonPawn = board.pieces(chess::PieceType::KNIGHT, us) |
+                              board.pieces(chess::PieceType::BISHOP, us) |
+                              board.pieces(chess::PieceType::ROOK, us) |
+                              board.pieces(chess::PieceType::QUEEN, us);
+    int pieceCount = chess::builtin::popcount(nonPawn);
+    int pawnCount  = chess::builtin::popcount(board.pieces(chess::PieceType::PAWN, us));
+
+    // Zugzwang when only king+pawns and very few total material
+    bool noMajor = (board.pieces(chess::PieceType::ROOK, us) == 0 &&
+                    board.pieces(chess::PieceType::QUEEN, us) == 0);
+    if (noMajor && (pieceCount + pawnCount) <= 5) {
+        return true;
+    }
+
+    return false;
+}
+
+bool ChessEngine::verifyNullMovePrune(chess::Board &board, int depth, int beta, uint64_t &nodes)
+{
+    // Use a shallower search to verify that null move pruning is safe
+    int verificationDepth = std::max(3, depth / 2);
+    
+    // For safer verification, we use a slightly narrower window
+    int verificationBeta = beta;
+    int verificationAlpha = beta - 1;
+    
+    // Generate only forcing moves for verification
+    chess::Movelist moves;
+    chess::movegen::legalmoves(moves, board);
+    
+    // Sort the moves to improve pruning
+    orderMoves(board, moves);
+    
+    // Try only a few most promising moves in verification search
+    // This is more efficient than a full search
+    const int MAX_VERIFY_MOVES = 5;
+    int movesToTry = std::min(MAX_VERIFY_MOVES, (int)moves.size());
+    
+    for (int i = 0; i < movesToTry; i++)
+    {
+        board.makeMove(moves[i]);
+        int score = -negamax(board, verificationDepth - 1, 1, -verificationBeta, -verificationAlpha, nodes);
+        board.unmakeMove(moves[i]);
+        
+        // If any move beats beta, verification succeeds
+        if (score >= verificationBeta)
+        {
+            return true;
+        }
+    }
+    
+    // Verification failed
+    return false;
+}
