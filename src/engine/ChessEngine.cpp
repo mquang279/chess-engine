@@ -33,6 +33,10 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             return bookMove;
         }
     }
+
+    // Increment transposition table age for new move
+    tt.increment_age();
+    
     // Start timer
     auto startTime = std::chrono::steady_clock::now();
 
