@@ -191,6 +191,38 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
         return quiesence(board, alpha, beta, nodes);
     }
 
+    // Null move pruning
+    if (depth >= 3 && !board.inCheck() && hasNonPawnMaterial(board))
+    {
+        // Adaptive reduction based on depth
+        int R = 3 + (depth / 6);  // R=3 for depths 3-5, R=4 for depths 6-11, etc.
+        
+        board.makeNullMove();
+
+        // Null-window search with reduced depth
+        int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, nodes);
+
+        board.unmakeNullMove(); 
+
+        // Avoid pruning near mate scores
+        if (nullScore >= beta && std::abs(nullScore) < 9000)
+        {
+            // Verification search for deep searches and critical positions
+            if (depth >= 8 && std::abs(nullScore) > 7500)
+            {
+                // Perform shallower search to verify the cutoff
+                int verificationDepth = depth / 2;
+                int verificationScore = negamax(board, verificationDepth, alpha, beta, nodes);
+                if (verificationScore >= beta)
+                    return beta;  // Verified cutoff
+            }
+            else
+            {
+                return beta;  // Beta cutoff (fail-high)
+            }
+        }
+    }
+
     // Generate legal moves
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
@@ -411,4 +443,17 @@ void ChessEngine::printSearchInfo(const SearchStats &stats)
               << ", NPS: " << nps
               << ", Best Move: " << stats.bestMove
               << std::endl;
+}
+
+bool ChessEngine::hasNonPawnMaterial(const chess::Board &board) const
+{
+    chess::Color side = board.sideToMove();
+
+    // Check for pieces other than king and pawns (excluding pawns)
+    chess::Bitboard pieces = board.pieces(chess::PieceType::KNIGHT, side) |
+                            board.pieces(chess::PieceType::BISHOP, side) |
+                            board.pieces(chess::PieceType::ROOK, side) |
+                            board.pieces(chess::PieceType::QUEEN, side);
+    
+    return pieces != 0;
 }

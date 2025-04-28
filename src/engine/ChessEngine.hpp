@@ -65,6 +65,8 @@ private:
 
     void printSearchInfo(const SearchStats &stats);
 
+    bool hasNonPawnMaterial(const chess::Board &board) const;
+
     Evaluation evaluation;
 
     std::mt19937 rng;
