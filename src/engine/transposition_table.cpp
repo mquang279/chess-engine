@@ -10,14 +10,13 @@ void TranspositionTable::clear() {
     hits = 0;
     misses = 0;
     collisions = 0;
-    current_age = 0;
 }
 
 void TranspositionTable::store(uint64_t hash_key, int score, TTFlag flag, int depth) {
     TranspositionEntry entry = {score, flag, depth};
     if (table.find(hash_key) != table.end()) {
         auto& existing = table[hash_key];
-        if (depth >= existing.depth || flag == TTFlag::EXACT_SCORE || current_age > existing.age + 2) {
+        if (depth >= existing.depth || flag == TTFlag::EXACT_SCORE) {
             table[hash_key] = entry;
         } else {
             collisions++;
@@ -60,11 +59,4 @@ TTStats TranspositionTable::get_stats() const {
         hit_rate,       // hit_rate
         collisions      // collisions
     };
-}
-
-void TranspositionTable::increment_age() {
-    current_age++;  
-    if (current_age == 255) {
-        clear();  // Reset table if age reaches max to avoid issues
-    }
 }
