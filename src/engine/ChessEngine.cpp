@@ -255,7 +255,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     {
         if (board.inCheck())
         {
-            int score = -std::numeric_limits<int>::max() + 1;
+            int score = -31999;
             tt.store(hashKey, score, TTFlag::EXACT_SCORE, depth);
             return score; // Checkmate, with distance-to-mate adjustment
         }
