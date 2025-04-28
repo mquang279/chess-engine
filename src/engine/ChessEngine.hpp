@@ -25,8 +25,8 @@ public:
 
     void enableOpeningBook(bool enable) { useOpeningBook = enable; }
 
-    static constexpr int MAX_DEPTH = 6;
-    static constexpr int TIME_LIMIT = 5;
+    static constexpr int MAX_DEPTH = 7;
+    static constexpr int TIME_LIMIT = 10;
     static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
 
 private:

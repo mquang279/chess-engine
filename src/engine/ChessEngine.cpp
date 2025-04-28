@@ -79,8 +79,8 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         int alpha, beta;
         if (depth == 1)
         {
-            alpha = -std::numeric_limits<int>::max() + 1;
-            beta = std::numeric_limits<int>::max();
+            alpha = -32000;
+            beta = 32000;
         }
         else
         {
@@ -102,13 +102,13 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             if (score <= alpha)
             {
                 // Failed low, widen window and retry
-                alpha = -std::numeric_limits<int>::max() + 1;
+                alpha = -32000;
                 windowFailed = true;
             }
             else if (score >= beta)
             {
                 // Failed high, widen window and retry
-                beta = std::numeric_limits<int>::max();
+                beta = 32000;
                 windowFailed = true;
             }
             else
@@ -119,7 +119,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             }
 
             // Break out if we've widened both bounds
-            if (alpha == -std::numeric_limits<int>::max() + 1 && beta == std::numeric_limits<int>::max())
+            if (alpha == -32000 && beta == 32000)
             {
                 windowFailed = false;
             }
