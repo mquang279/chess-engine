@@ -189,7 +189,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
     return bestMove;
 }
 
-int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, int ply, uint64_t &nodes)
+int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes)
 {
     nodes++; // Increment node counter
 
@@ -236,7 +236,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, in
     // Order moves for better pruning
     orderMoves(board, moves);
 
-    int bestScore = -32000;
+    int bestScore = -std::numeric_limits<int>::max();;
     int alphaOriginal = alpha;
 
     // Iterate through each move
@@ -303,8 +303,8 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, in
             // If we found a move that's too good, no need to search further
             if (alpha >= beta)
             {
-                tt.store(hashKey, alpha, TTFlag::LOWER_BOUND, depth);
-                return alpha; // Beta cutoff (fail-high)
+                tt.store(hashKey, beta, TTFlag::LOWER_BOUND, depth);
+                return beta; // Beta cutoff (fail-high)
             }
         }
     }
