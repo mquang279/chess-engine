@@ -3,7 +3,7 @@
 #include <iomanip>
 
 ChessEngine::ChessEngine()
-    : rng(std::random_device{}()), tt(64)
+    : rng(std::random_device{}()), tt(64), history(), killers()
 {
     initializeOpeningBook();
 }
@@ -33,6 +33,10 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             return bookMove;
         }
     }
+
+    // Increment transposition table age for new move
+    tt.increment_age();
+    history.clear();
 
     // Start timer
     auto startTime = std::chrono::steady_clock::now();
@@ -200,7 +204,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
     int materialAdv = std::abs(eval) / 100;
 
 
-    //Null move pruning
+    // Null move pruning
     if (depth >= 3 && !inCheck && hasNonPawnMaterial(board) && !possibleZ && std::abs(eval) < 9000) 
     {
         // Static Null Move Pruning (SNMP) - early pruning based on static evaluation margin
@@ -216,21 +220,11 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
         R = std::min(R, 4);         // Maximum reduction of 4 plies
         
         board.makeNullMove();
-        int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, ply + 1, nodes); 
+        int nullScore = -negamax(board, depth - 1 - R, ply + 1, -beta, -beta + 1, nodes); 
         board.unmakeNullMove();
 
         if (nullScore >= beta) {
-            // Enhanced verification search for positions that might be zugzwang
-            if (depth >= 5 && (inEndgame || std::abs(eval - beta) < 100)) {
-                // Use a deeper verification search for critical positions
-                if (verifyNullMovePrune(board, depth, beta, nodes)) {
-                    return beta;
-                }
-            } 
-            else {
-                // More confident positions - can safely return beta
-                return beta;
-            }
+            return beta; // Confidently return beta without verification
         }
     }
 
@@ -360,6 +354,11 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
             // If we found a move that's too good, no need to search further
             if (alpha >= beta)
             {
+                if (!isCapture) {
+                    killers.put(move, ply);
+                    history.update(move, depth, board.sideToMove() == chess::Color::WHITE);
+                }
+
                 tt.store(hashKey, beta, TTFlag::LOWER_BOUND, depth);
                 return beta; // Beta cutoff (fail-high)
             }
@@ -610,43 +609,5 @@ bool ChessEngine::isPossibleZugzwang(const chess::Board &board) const
         return true;
     }
 
-    return false;
-}
-
-bool ChessEngine::verifyNullMovePrune(chess::Board &board, int depth, int beta, uint64_t &nodes)
-{
-    // Use a shallower search to verify that null move pruning is safe
-    int verificationDepth = std::max(3, depth / 2);
-    
-    // For safer verification, we use a slightly narrower window
-    int verificationBeta = beta;
-    int verificationAlpha = beta - 1;
-    
-    // Generate only forcing moves for verification
-    chess::Movelist moves;
-    chess::movegen::legalmoves(moves, board);
-    
-    // Sort the moves to improve pruning
-    orderMoves(board, moves);
-    
-    // Try only a few most promising moves in verification search
-    // This is more efficient than a full search
-    const int MAX_VERIFY_MOVES = 5;
-    int movesToTry = std::min(MAX_VERIFY_MOVES, (int)moves.size());
-    
-    for (int i = 0; i < movesToTry; i++)
-    {
-        board.makeMove(moves[i]);
-        int score = -negamax(board, verificationDepth - 1, 1, -verificationBeta, -verificationAlpha, nodes);
-        board.unmakeMove(moves[i]);
-        
-        // If any move beats beta, verification succeeds
-        if (score >= verificationBeta)
-        {
-            return true;
-        }
-    }
-    
-    // Verification failed
     return false;
 }

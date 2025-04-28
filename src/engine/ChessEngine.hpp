@@ -3,6 +3,8 @@
 
 #include "../chess.hpp"
 #include "Evaluation.hpp"
+#include "History.hpp"
+#include "Killer.hpp"
 #include "OpeningMove.hpp"
 #include "transposition_table.hpp"
 #include <vector>
@@ -95,6 +97,9 @@ private:
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 
     TranspositionTable tt;
+
+    HISTORY::History history;
+    KILLER::Killers killers;
 };
 
 #endif // CHESS_ENGINE_HPP
