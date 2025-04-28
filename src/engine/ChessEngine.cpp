@@ -3,7 +3,7 @@
 #include <iomanip>
 
 ChessEngine::ChessEngine()
-    : rng(std::random_device{}()), tt(64)
+    : rng(std::random_device{}()), tt(64), history(), killers()
 {
     initializeOpeningBook();
 }
@@ -36,6 +36,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
 
     // Increment transposition table age for new move
     tt.increment_age();
+    history.clear();
 
     // Start timer
     auto startTime = std::chrono::steady_clock::now();
@@ -79,8 +80,8 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         int alpha, beta;
         if (depth == 1)
         {
-            alpha = -32000;
-            beta = 32000;
+            alpha = -INF + 1;
+            beta =INF;
         }
         else
         {
@@ -96,19 +97,19 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         bool windowFailed = true;
         while (windowFailed)
         {
-            score = negamax(board, depth, alpha, beta, nodes);
+            score = negamax(board, depth, alpha, beta, 0, nodes);
 
             // Check if search failed low or high
             if (score <= alpha)
             {
                 // Failed low, widen window and retry
-                alpha = -32000;
+                alpha = -INF + 1;
                 windowFailed = true;
             }
             else if (score >= beta)
             {
                 // Failed high, widen window and retry
-                beta = 32000;
+                beta =INF;
                 windowFailed = true;
             }
             else
@@ -119,7 +120,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             }
 
             // Break out if we've widened both bounds
-            if (alpha == -32000 && beta == 32000)
+            if (alpha == -INF + 1 && beta ==INF)
             {
                 windowFailed = false;
             }
@@ -133,7 +134,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         for (const auto &move : moves)
         {
             board.makeMove(move);
-            int moveScore = -negamax(board, depth - 1, -beta, -alpha, nodes);
+            int moveScore = -negamax(board, depth - 1, -beta, -alpha, 1, nodes);
             board.unmakeMove(move);
 
             if (moveScore > alpha)
@@ -189,7 +190,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
     return bestMove;
 }
 
-int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes)
+int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, int ply, uint64_t &nodes)
 {
     nodes++; // Increment node counter
 
@@ -211,7 +212,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     // Base case: leaf node (evaluate position or use quiescence search)
     if (depth <= 0)
     {
-        return quiesence(board, alpha, beta, nodes);
+        return quiesence(board, alpha, beta, ply, nodes);
     }
 
     // Null move pruning
@@ -223,7 +224,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
         board.makeNullMove();
 
         // Null-window search with reduced depth
-        int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, nodes);
+        int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, ply+1, nodes);
 
         board.unmakeNullMove();
 
@@ -235,7 +236,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
             {
                 // Perform shallower search to verify the cutoff
                 int verificationDepth = depth / 2;
-                int verificationScore = negamax(board, verificationDepth, alpha, beta, nodes);
+                int verificationScore = negamax(board, verificationDepth, alpha, beta, ply+1, nodes);
                 if (verificationScore >= beta)
                     return beta; // Verified cutoff
             }
@@ -255,7 +256,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     {
         if (board.inCheck())
         {
-            int score = -31999;
+            int score = -INF + 1;
             tt.store(hashKey, score, TTFlag::EXACT_SCORE, depth);
             return score; // Checkmate, with distance-to-mate adjustment
         }
@@ -266,9 +267,9 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     }
 
     // Order moves for better pruning
-    orderMoves(board, moves);
+    orderMoves(board, moves, ply);
 
-    int bestScore = -32000;
+    int bestScore = -INF;
     int alphaOriginal = alpha;
 
     // Static evaluation for pruning decisions
@@ -356,19 +357,18 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
         // For reduced moves, first try null-window search
         if (isReduced)
         {
-            // Null-window search with reduced depth
-            score = -negamax(board, newDepth, -alpha - 1, -alpha, nodes);
+            score = -negamax(board, newDepth, -alpha - 1, -alpha, ply+1, nodes);
 
             // If the reduced search looks promising, do a full-depth search
             if (score > alpha)
             {
-                score = -negamax(board, depth - 1, -beta, -alpha, nodes);
+                score = -negamax(board, depth - 1, -beta, -alpha, ply+1, nodes);
             }
         }
         else
         {
-            // Normal full-window search for non-reduced moves
-            score = -negamax(board, newDepth, -beta, -alpha, nodes);
+            // Full-window search for promising moves
+            score = -negamax(board, newDepth, -beta, -alpha, ply+1, nodes);
         }
 
         // Undo the move
@@ -388,6 +388,11 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
             // If we found a move that's too good, no need to search further
             if (alpha >= beta)
             {
+                if (!isCapture) {
+                    killers.put(move, ply);
+                    history.update(move, depth, board.sideToMove() == chess::Color::WHITE);
+                }
+
                 tt.store(hashKey, beta, TTFlag::LOWER_BOUND, depth);
                 return beta; // Beta cutoff (fail-high)
             }
@@ -406,7 +411,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     return bestScore;
 }
 
-int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes)
+int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, int ply, uint64_t &nodes)
 {
     nodes++; // Increment node counter
     bool inCheck = board.inCheck();
@@ -429,16 +434,16 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
         }
     }
 
+
     chess::Movelist moves;
     // Stand pat (evaluate current position)
     if (inCheck)
     {
         chess::movegen::legalmoves(moves, board);
-    }
-    else
-    {
+        orderMoves(board, moves, ply);
+    } else {
         chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
-        orderMoves(board, moves);
+        orderMoves(board, moves, ply);
     }
 
     for (const auto &move : moves)
@@ -452,7 +457,7 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
         board.makeMove(move);
 
         // Recursive quiescence search
-        int score = -quiesence(board, -beta, -alpha, nodes);
+        int score = -quiesence(board, -beta, -alpha, ply+1, nodes);
 
         board.unmakeMove(move);
 
@@ -468,57 +473,60 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
     }
     if (inCheck && moves.size() == 0)
     {
-        return -std::numeric_limits<int>::max(); // Checkmate
+        return CHECKMATE_SCORE + ply; // Checkmate
     }
 
     tt.store(hashKey, alpha, TTFlag::EXACT_SCORE, 0);
     return alpha;
 }
 
-void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves)
+void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves, const int ply)
 {
     // Score each move using heuristics
     for (auto &move : moves)
     {
-        scoreMoves(board, move);
+        scoreMoves(board, move, ply);
     }
 
     // Sort moves by score (highest first)
     moves.sort();
 }
 
-void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
+void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move, const int ply)
 {
     int score = 0;
 
+
     // Score captures based on MVV-LVA (Most Valuable Victim, Least Valuable Aggressor)
-    if (board.at(move.to()) != chess::Piece::NONE)
+    if (board.isCapture(move))
     {
-        // Get piece types
-        chess::PieceType captured = chess::utils::typeOfPiece(board.at(move.to()));
-        chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
+        if (move.typeOf() == chess::Move::ENPASSANT) {
+            score = SEE::getMvvLvaScore(chess::PieceType::PAWN,
+                                    chess::PieceType::PAWN) + 1000;
+        }
+        else {
+            // Get piece types
+            chess::PieceType captured = chess::utils::typeOfPiece(board.at(move.to()));
+            chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
 
-        // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
-        score = SEE::getMvvLvaScore(captured, attacker);
+            // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
+            score = SEE::getMvvLvaScore(captured, attacker);
 
-        // Add bonus for good captures based on SEE
-        if (score < 6000)
-        {
-            if (SEE::isGoodCapture(move, board, 0))
-            {
-                score += GOOD_CAPTURE_WEIGHT;
-            }
-            else
-            {
-                score = 0;
+            // Add bonus for good captures based on SEE
+            if (score < 6000) {
+                if (SEE::isGoodCapture(move, board, 0))
+                {
+                    score += GOOD_CAPTURE_WEIGHT;
+                } else {
+                    score = 0;
+                }
             }
         }
-    }
-    else if (move.typeOf() == chess::Move::ENPASSANT)
-    {
-        score = SEE::getMvvLvaScore(chess::PieceType::PAWN,
-                                    chess::PieceType::PAWN) +
-                1000;
+    } else {
+        if (ply > 0 && killers.isKiller(move, ply)) {
+            score += 50; // Killer move bonus
+        }
+        score += history.get(move, board.sideToMove() == chess::Color::WHITE);
     }
 
     // Score promotions
@@ -537,6 +545,7 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
     // We could add more scoring factors here:
     // - Killer moves (quiet moves that caused beta cutoffs at the same depth)
     // - History heuristic (for quiet moves)
+
 
     move.setScore(score);
 }

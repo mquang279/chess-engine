@@ -3,6 +3,8 @@
 
 #include "../chess.hpp"
 #include "Evaluation.hpp"
+#include "History.hpp"
+#include "Killer.hpp"
 #include "OpeningMove.hpp"
 #include "transposition_table.hpp"
 #include <vector>
@@ -63,14 +65,15 @@ private:
         }
     };
 
-    int negamax(chess::Board &board, int depth, int alpha, int beta,
+    int negamax(chess::Board &board, int depth, int alpha, int beta, int ply,
                 uint64_t &nodes);
 
-    int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes);
+    int quiesence(chess::Board &board, int alpha, int beta, int ply,
+                  uint64_t &nodes);
 
-    void orderMoves(chess::Board &board, chess::Movelist &moves);
+    void orderMoves(chess::Board &board, chess::Movelist &moves, int ply);
 
-    void scoreMoves(const chess::Board &board, chess::Move &move);
+    void scoreMoves(const chess::Board &board, chess::Move &move, int ply);
 
     int evaluatePosition(const chess::Board &board);
 
@@ -85,6 +88,9 @@ private:
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 
     TranspositionTable tt;
+
+    HISTORY::History history;
+    KILLER::Killers killers;
 };
 
 #endif // CHESS_ENGINE_HPP
