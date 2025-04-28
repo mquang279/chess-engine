@@ -1,8 +1,9 @@
 #include "ChessEngine.hpp"
 #include "See.hpp"
+#include <iomanip>
 
 ChessEngine::ChessEngine()
-    : rng(std::random_device{}())
+    : rng(std::random_device{}()), tt(64)
 {
     initializeOpeningBook();
 }
@@ -148,6 +149,15 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         // Print search information
         printSearchInfo(stats);
 
+        // Print TT stats
+        TTStats ttStats = tt.get_stats();
+        std::cout << "TT Stats - Depth " << depth << ": "
+                  << "Size: " << ttStats.size << "/" << ttStats.capacity
+                  << ", Usage: " << std::fixed << std::setprecision(2) << ttStats.usage << "%"
+                  << ", Hit Rate: " << ttStats.hit_rate << "%"
+                  << ", Collisions: " << ttStats.collisions
+                  << std::endl;
+
         // Check if we've exceeded the time limit
         if (elapsed.count() > TIME_LIMIT * 1000 / 2) // Use half the available time for safety
         {
@@ -179,9 +189,18 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 {
     nodes++; // Increment node counter
 
+    // Transposition table lookup
+    uint64_t hashKey = board.hash();
+    auto [found, score] = tt.lookup(hashKey, depth, alpha, beta);
+    if (found)
+    {
+        return score;
+    }
+
     // Check for immediate draw conditions
     if (board.isInsufficientMaterial() || board.isRepetition(2) || board.isHalfMoveDraw())
     {
+        tt.store(hashKey, 0, TTFlag::EXACT_SCORE, depth);
         return 0; // Draw
     }
 
@@ -200,7 +219,9 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     {
         if (board.inCheck())
         {
-            return -std::numeric_limits<int>::max() + 1; // Checkmate, with distance-to-mate adjustment
+            int score = -std::numeric_limits<int>::max() + 1;
+            tt.store(hashKey, score, TTFlag::EXACT_SCORE, depth);
+            return score; // Checkmate, with distance-to-mate adjustment
         }
         else
         {
@@ -212,6 +233,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
     orderMoves(board, moves);
 
     int bestScore = -std::numeric_limits<int>::max();
+    int alphaOriginal = alpha;
 
     // Iterate through each move
     for (int i = 0; i < moves.size(); i++)
@@ -277,10 +299,21 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
             // If we found a move that's too good, no need to search further
             if (alpha >= beta)
             {
+                tt.store(hashKey, beta, TTFlag::LOWER_BOUND, depth);
                 return beta; // Beta cutoff (fail-high)
             }
         }
     }
+    // Store result in transposition table
+    if (alpha > alphaOriginal)
+    {
+        tt.store(hashKey, bestScore, TTFlag::EXACT_SCORE, depth);
+    }
+    else
+    {
+        tt.store(hashKey, bestScore, TTFlag::UPPER_BOUND, depth);
+    }
+    
 
     return bestScore;
 }
@@ -289,12 +322,22 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
 {
     nodes++; // Increment node counter
 
+    uint64_t hashKey = board.hash();
+    auto [hit, score] = tt.lookup(hashKey, 0, alpha, beta);
+    if (hit)
+    {
+        return score;
+    }
     // Stand pat (evaluate current position)
     int standPat = evaluatePosition(board);
 
     // Check if current position is already better than beta
     if (standPat >= beta)
+    {
+        tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
         return beta;
+    }
+        
 
     // Update alpha if stand-pat score is better
     if (standPat > alpha)
@@ -329,13 +372,16 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
 
         // Beta cutoff
         if (score >= beta)
+        {
+            tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
             return beta;
-
+        }
         // Update alpha
         if (score > alpha)
             alpha = score;
     }
 
+    tt.store(hashKey, alpha, TTFlag::EXACT_SCORE, 0);
     return alpha;
 }
 

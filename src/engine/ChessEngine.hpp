@@ -4,6 +4,7 @@
 #include "../chess.hpp"
 #include "Evaluation.hpp"
 #include "OpeningMove.hpp"
+#include "transposition_table.hpp"
 #include <vector>
 #include <chrono>
 #include <iostream>
@@ -70,6 +71,8 @@ private:
     std::mt19937 rng;
 
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
+
+    TranspositionTable tt;
 };
 
 #endif // CHESS_ENGINE_HPP
