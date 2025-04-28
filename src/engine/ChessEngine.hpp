@@ -68,6 +68,15 @@ private:
 
     void printSearchInfo(const SearchStats &stats);
 
+    // Null move pruning helper functions
+    bool hasNonPawnMaterial(const chess::Board &board) const;
+
+    bool isEndGame(const chess::Board &board) const;
+
+    bool isPossibleZugzwang(const chess::Board &board) const;
+
+    bool verifyNullMovePrune(chess::Board &board, int depth, int beta, uint64_t &nodes);
+
     Evaluation evaluation;
 
     std::mt19937 rng;
