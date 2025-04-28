@@ -34,6 +34,14 @@ public:
     static constexpr int CHECKMATE_SCORE = MATE_VALUE;
     static constexpr int DRAW_SCORE = 0;
 
+    // Constants for pruning techniques
+    static constexpr int FUTILITY_MARGIN_BASE = 125;  // Base margin for futility pruning (centipawns)
+    static constexpr int FUTILITY_MARGIN_MULTIPLIER = 100;  // Multiplier per depth
+    static constexpr int LMP_BASE = 3;  // Base move count for late move pruning
+    static constexpr int LMP_DEPTH_FACTOR = 3;  // Additional moves per depth level
+    static constexpr int LMR_MIN_DEPTH = 3;  // Minimum depth for late move reduction
+    static constexpr int LMR_MIN_MOVES = 3;  // Minimum moves before reduction
+
 private:
     // Constants for searchMoves arrays
     static constexpr int NUM_PLIES = 64;
