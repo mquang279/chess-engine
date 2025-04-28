@@ -33,7 +33,8 @@ public:
     static constexpr int MATE_VALUE = 30000;
     static constexpr int CHECKMATE_SCORE = MATE_VALUE;
     static constexpr int DRAW_SCORE = 0;
-
+    static constexpr int DELTA = 200;
+ 
 private:
     // Constants for searchMoves arrays
     static constexpr int NUM_PLIES = 64;

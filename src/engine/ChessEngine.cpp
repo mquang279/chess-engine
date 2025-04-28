@@ -230,20 +230,34 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
         int score;
 
         // If reduced search, do a null-window search first
-        if (isReduced)
+        if (i == 0 || isReduced)
         {
-            score = -negamax(board, newDepth, ply + 1, -alpha - 1, -alpha, nodes);
-
-            // If the reduced search returns a promising score, search again with full depth
-            if (score > alpha)
+            // First move or reduced search: use full window
+            if (isReduced)
             {
-                score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, nodes);
+                // Reduced search with null window
+                score = -negamax(board, newDepth, ply + 1, -alpha - 1, -alpha, nodes);
+                if (score > alpha)
+                {
+                    // Re-search with full depth and full window if promising
+                    score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, nodes);
+                }
+            }
+            else
+            {
+                // First move: full window search
+                score = -negamax(board, newDepth, ply + 1, -beta, -alpha, nodes);
             }
         }
         else
         {
-            // Full-window search for promising moves
-            score = -negamax(board, newDepth, ply + 1, -beta, -alpha, nodes);
+            // Subsequent moves: null-window search
+            score = -negamax(board, newDepth, ply + 1, -alpha - 1, -alpha, nodes);
+            if (score > alpha && score < beta)
+            {
+                // Re-search with full window if the move is better than expected
+                score = -negamax(board, newDepth, ply + 1, -beta, -alpha, nodes);
+            }
         }
 
         // Undo the move
@@ -307,9 +321,11 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
         return score;
     }
 
+    int standPat = 0;
+
     if (!inCheck)
     {
-        int standPat = evaluatePosition(board);
+        standPat = evaluatePosition(board);
         if (standPat >= beta)
         {
             tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
@@ -336,6 +352,19 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
 
     for (const auto &move : moves)
     {
+
+        // Delta pruning (only when not in check)
+        if (!inCheck)
+        {
+            int moveGain = move.score();
+
+            // Delta pruning: skip if move can't improve alpha
+            if (standPat + moveGain + DELTA <= alpha)
+            {
+                continue;
+            }
+        }
+
         // Static Exchange Evaluation (SEE) pruning for bad captures
         if (!inCheck && !SEE::isGoodCapture(move, board, -20))
         {
@@ -456,3 +485,4 @@ void ChessEngine::printSearchInfo(const SearchStats &stats)
               << ", Best Move: " << stats.bestMove
               << std::endl;
 }
+
