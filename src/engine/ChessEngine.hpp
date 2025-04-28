@@ -28,6 +28,8 @@ public:
     static constexpr int MAX_DEPTH = 7;
     static constexpr int TIME_LIMIT = 10;
     static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
+    static constexpr int INF = 32000;
+    static constexpr int CHECKMATE_SCORE = -31999;
 
 private:
     // Constants for searchMoves arrays

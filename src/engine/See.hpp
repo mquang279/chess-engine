@@ -8,6 +8,14 @@
 
 namespace SEE {
   const int PIECE_VALUES[6] = {100, 320, 330, 500, 900, 10000};
+  const int MVV_LVA_TABLE[6][6] = {
+  {6002,20225,20250,20400,20800,26900},
+    {4775, 6004,20025,20175,20575,26675},
+    {4750, 4975, 6006,20150,20550,26650},
+    {4600, 4825, 4850, 6008,20400,26500},
+    {4200, 4425, 4450, 4600, 6010,26100},
+    {3100, 3325, 3350, 3500, 3900,26000}
+  };
 
   inline int getPieceValue(const chess::Square sq, const chess::Board& board) {
     return PIECE_VALUES[static_cast<int>(board.at<chess::PieceType>(sq))];
@@ -173,6 +181,14 @@ namespace SEE {
     }
 
     return oppColor != board.sideToMove();
+  }
+
+  inline int getMvvLvaScore(chess::PieceType victim, chess::PieceType attacker) {
+    return MVV_LVA_TABLE[static_cast<int>(victim)][static_cast<int>(attacker)];
+  }
+
+  inline void generateCaptureAndPromotion(chess::Movelist moves, chess::Board &board) {
+    chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
   }
 
 
