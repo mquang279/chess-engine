@@ -4,22 +4,25 @@
 #include <unordered_map>
 #include <cstdint>
 #include <tuple>
-#include "chess.hpp"
+#include "../chess.hpp"
 
-enum class TTFlag {
+enum class TTFlag
+{
     EXACT_SCORE = 0,
     UPPER_BOUND = 1,
     LOWER_BOUND = 2
 };
 
-struct TranspositionEntry {
+struct TranspositionEntry
+{
     int score;
     TTFlag flag;
     int depth;
     int age;
 };
 
-struct TTStats {
+struct TTStats
+{
     size_t size;       // Số entry hiện tại trong bảng
     size_t capacity;   // Dung lượng tối đa của bảng
     double usage;      // Tỷ lệ sử dụng (%)
@@ -29,7 +32,8 @@ struct TTStats {
     size_t collisions; // Số lần va chạm khi lưu entry
 };
 
-class TranspositionTable {
+class TranspositionTable
+{
 public:
     TranspositionTable(size_t size_mb = 64);
     void clear();
@@ -43,7 +47,7 @@ private:
     size_t hits = 0;
     size_t misses = 0;
     size_t collisions = 0;
-    size_t capacity; 
+    size_t capacity;
     int current_age = 0;
 };
 

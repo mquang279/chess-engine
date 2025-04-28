@@ -55,10 +55,10 @@ private:
         }
     };
 
-    int negamax(chess::Board &board, int depth, int alpha, int beta,
+    int negamax(chess::Board &board, int depth, int ply, int alpha, int beta,
                 uint64_t &nodes);
 
-    int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes);
+    int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes, int ply = 0);
 
     void orderMoves(chess::Board &board, chess::Movelist &moves);
 
