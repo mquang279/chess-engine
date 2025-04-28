@@ -189,7 +189,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
     return bestMove;
 }
 
-int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, uint64_t &nodes)
+int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, int ply, uint64_t &nodes)
 {
     nodes++; // Increment node counter
 
@@ -325,40 +325,33 @@ int ChessEngine::negamax(chess::Board &board, int depth, int alpha, int beta, ui
 int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes)
 {
     nodes++; // Increment node counter
-
+    bool inCheck = board.inCheck();
     uint64_t hashKey = board.hash();
     auto [hit, score] = tt.lookup(hashKey, 0, alpha, beta);
     if (hit)
     {
         return score;
     }
-    // Stand pat (evaluate current position)
-    int standPat = evaluatePosition(board);
 
-    // Check if current position is already better than beta
-    if (standPat >= beta)
-    {
-        tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
-        return beta;
+    if (!inCheck) {
+        int standPat = evaluatePosition(board);
+        if (standPat >= alpha) {
+            if (standPat >= beta) return beta;
+            tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
+            alpha = standPat;
+        }
     }
-        
 
-    // Update alpha if stand-pat score is better
-    if (standPat > alpha)
-        alpha = standPat;
 
-    // Generate only capture moves
     chess::Movelist moves;
-    chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
-
-    // Score and sort capture moves
-    for (auto &move : moves)
-    {
-        scoreMoves(board, move);
+    // Stand pat (evaluate current position)
+    if (inCheck) {
+        chess::movegen::legalmoves(moves, board);
+    } else {
+        chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
+        orderMoves(board, moves);
     }
-    moves.sort();
 
-    // Iterate through captures
     for (const auto &move : moves)
     {
         // Static Exchange Evaluation (SEE) pruning for bad captures
@@ -384,6 +377,9 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
         if (score > alpha)
             alpha = score;
     }
+    if (inCheck && moves.size() == 0) {
+        return -std::numeric_limits<int>::max(); // Checkmate
+    }
 
     tt.store(hashKey, alpha, TTFlag::EXACT_SCORE, 0);
     return alpha;
@@ -405,6 +401,7 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
 {
     int score = 0;
 
+
     // Score captures based on MVV-LVA (Most Valuable Victim, Least Valuable Aggressor)
     if (board.at(move.to()) != chess::Piece::NONE)
     {
@@ -413,13 +410,20 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
         chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
 
         // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
-        score = 6 * static_cast<int>(captured) - static_cast<int>(attacker) + 10;
+        score = SEE::getMvvLvaScore(captured, attacker);
 
         // Add bonus for good captures based on SEE
-        if (SEE::isGoodCapture(move, board, 0))
-        {
-            score += GOOD_CAPTURE_WEIGHT;
+        if (score < 6000) {
+            if (SEE::isGoodCapture(move, board, 0))
+            {
+                score += GOOD_CAPTURE_WEIGHT;
+            } else {
+                score = 0;
+            }
         }
+    } else if (move.typeOf() == chess::Move::ENPASSANT) {
+        score = SEE::getMvvLvaScore(chess::PieceType::PAWN,
+                                    chess::PieceType::PAWN) + 1000;
     }
 
     // Score promotions
@@ -427,7 +431,7 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
     {
         // Higher score for queen promotions
         if (move.promotionType() == chess::PieceType::QUEEN)
-            score += 900;
+            score += 100000;
         else if (move.promotionType() == chess::PieceType::ROOK)
             score += 500;
         else if (move.promotionType() == chess::PieceType::BISHOP ||

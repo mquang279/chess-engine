@@ -25,9 +25,11 @@ public:
 
     void enableOpeningBook(bool enable) { useOpeningBook = enable; }
 
-    static constexpr int MAX_DEPTH = 6;
+    static constexpr int MAX_DEPTH = 7;
     static constexpr int TIME_LIMIT = 5;
     static constexpr int GOOD_CAPTURE_WEIGHT = 5000;
+    static constexpr int INF = 32000;
+    static constexpr int CHECKMATE_SCORE = -31999;
 
 private:
     // Constants for searchMoves arrays
@@ -54,7 +56,7 @@ private:
     };
 
     int negamax(chess::Board &board, int depth, int alpha, int beta,
-                uint64_t &nodes);
+        uint64_t &nodes);
 
     int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes);
 
