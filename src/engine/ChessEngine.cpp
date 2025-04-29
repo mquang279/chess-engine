@@ -229,21 +229,26 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
         // Recursive negamax call with negated bounds
         int score;
 
-        // If reduced search, do a null-window search first
-        if (isReduced)
-        {
+        // Principal Variation Search implementation
+        if (i == 0) {
+            // Search first move with full window
+            score = -negamax(board, newDepth, ply + 1, -beta, -alpha, nodes);
+        } else {
+            // Try a null-window search for remaining move
+            // Reduced-depth null-window search
             score = -negamax(board, newDepth, ply + 1, -alpha - 1, -alpha, nodes);
+                
+            // If the reduced search exceeds alpha, we need to re-search at full depth
+            if (isReduced && score > alpha) {
 
-            // If the reduced search returns a promising score, search again with full depth
-            if (score > alpha)
-            {
+                score = -negamax(board, depth - 1, ply + 1, -alpha - 1, -alpha, nodes);
+            }
+            
+            // If the null-window search failed high but didn't exceed beta, 
+            // we need a full-window search
+            if (score > alpha && score < beta) {
                 score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, nodes);
             }
-        }
-        else
-        {
-            // Full-window search for promising moves
-            score = -negamax(board, newDepth, ply + 1, -beta, -alpha, nodes);
         }
 
         // Undo the move
