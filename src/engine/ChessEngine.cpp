@@ -307,9 +307,10 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
         return score;
     }
 
+    int standPat = -INF;
     if (!inCheck)
     {
-        int standPat = evaluatePosition(board);
+        standPat = evaluatePosition(board);
         if (standPat >= beta)
         {
             tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
@@ -322,6 +323,7 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
     }
 
     chess::Movelist moves;
+
     // In check, we must consider all legal moves
     if (inCheck)
     {
@@ -336,6 +338,17 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
 
     for (const auto &move : moves)
     {
+        if (!inCheck)
+        {
+            int moveGain = move.score();
+
+            // Delta pruning: skip if move can't improve alpha
+            if (standPat + moveGain + DELTA <= alpha)
+            {
+                continue;
+            }
+        }
+
         // Static Exchange Evaluation (SEE) pruning for bad captures
         if (!inCheck && !SEE::isGoodCapture(move, board, -20))
         {
