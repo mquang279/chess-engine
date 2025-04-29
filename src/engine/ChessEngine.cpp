@@ -10,7 +10,6 @@ ChessEngine::ChessEngine()
 
 bool ChessEngine::initializeOpeningBook()
 {
-    // Use only Adams.pgn for opening book
     std::string path = "assets/opening/Adams.pgn";
     std::cout << "Initializing opening book!!!" << std::endl;
     return openingBook.initializeFromFile(path);
@@ -34,41 +33,32 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         }
     }
 
-    // Start timer and reset timeout flag
     startTime = std::chrono::steady_clock::now();
     timeIsUp = false;
 
-    // Initialize search statistics
     SearchStats stats;
     stats.reset();
 
-    // Initialize best move to invalid
     chess::Move bestMove = chess::Move::NULL_MOVE;
 
-    // Generate legal moves
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
 
-    // If only one move, return immediately
     if (moves.size() == 1)
     {
         moveCounter++;
         return moves[0];
     }
 
-    // Handle special case with no legal moves
     if (moves.empty())
     {
         return chess::Move::NULL_MOVE;
     }
 
-    // Order moves before iterative deepening
     orderMoves(board, moves);
 
-    // Perform iterative deepening
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
-        // If time is already up, break the loop
         if (timeIsUp) {
             break;
         }
@@ -76,25 +66,20 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         stats.depth = depth;
         stats.reset();
 
-        // Set initial alpha-beta bounds - full window for every depth
         int alpha = -32000;
         int beta = 32000;
 
-        // Perform negamax search
         uint64_t nodes = 0;
         int score;
 
-        // Track best move at current depth
         chess::Move currentBestMove = chess::Move::NULL_MOVE;
 
-        // Main search with all legal moves at the current depth
         for (const auto &move : moves)
         {
             board.makeMove(move);
             int moveScore = -negamax(board, depth - 1, 1, -beta, -alpha, nodes);
             board.unmakeMove(move);
             
-            // If time is up during search, break early
             if (timeIsUp) {
                 break;
             }
@@ -106,7 +91,6 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             }
         }
 
-        // If we completed the depth without timing out, update the best move
         if (!timeIsUp && currentBestMove != chess::Move::NULL_MOVE) {
             bestMove = currentBestMove;
             stats.bestMove = bestMove;
@@ -114,16 +98,13 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
             stats.nodes = nodes;
         }
 
-        // Check elapsed time
         auto currentTime = std::chrono::steady_clock::now();
         std::chrono::milliseconds elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             currentTime - startTime);
         stats.duration = elapsed;
 
-        // Print search information
         printSearchInfo(stats);
 
-        // Print TT stats
         TTStats ttStats = tt.get_stats();
         std::cout << "TT Stats - Depth " << depth << ": "
                   << "Size: " << ttStats.size << "/" << ttStats.capacity
@@ -132,7 +113,6 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
                   << ", Collisions: " << ttStats.collisions
                   << std::endl;
 
-        // Check if we've exceeded the time limit
         if (elapsed.count() > TIME_LIMIT * 1000) {
             timeIsUp = true;
             std::cout << "Time limit reached after depth " << depth << std::endl;
@@ -140,18 +120,15 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         }
     }
 
-    // If still no valid move found (unlikely), pick a random legal move
     if (bestMove == chess::Move::NULL_MOVE && !moves.empty())
     {
         std::uniform_int_distribution<size_t> dist(0, moves.size() - 1);
         bestMove = moves[dist(rng)];
     }
 
-    // Calculate total time taken
     auto endTime = std::chrono::steady_clock::now();
     auto totalTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
 
-    // Print total time and best move chosen
     std::cout << "\nSearch completed in " << totalTime << "ms" << std::endl;
     std::cout << "Best move: " << chess::uci::moveToUci(bestMove) << std::endl;
     std::cout << "---------------------------------------------------------" << std::endl;
@@ -162,19 +139,17 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
 
 int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int beta, uint64_t &nodes)
 {
-    // Check if time is up - do this early to abort search quickly
-    if ((nodes & 1023) == 0) { // Check time every 1024 nodes to avoid expensive time checks
+    if ((nodes & 1023) == 0) {
         auto currentTime = std::chrono::steady_clock::now();
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count();
         if (elapsed > TIME_LIMIT * 1000) {
             timeIsUp = true;
-            return alpha; // Return a reasonable value to avoid disrupting the search
+            return alpha;
         }
     }
 
-    nodes++; // Increment node counter
+    nodes++;
 
-    // Mate distance pruning - revised implementation
     if (alpha < -CHECKMATE_SCORE + ply)
         alpha = -CHECKMATE_SCORE + ply;
     if (beta > CHECKMATE_SCORE - ply)
@@ -182,19 +157,17 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
     if (alpha >= beta)
         return alpha;
 
-    // Check for immediate draw conditions
     if (board.isInsufficientMaterial() || board.isRepetition(2) || board.isHalfMoveDraw())
     {
-        return DRAW_SCORE; // Draw
+        return DRAW_SCORE;
     }
 
-    // Base case: leaf node (evaluate position or use quiescence search)
     if (depth <= 0)
     {
         return quiesence(board, alpha, beta, nodes, ply);
     }
 
-    // Transposition table lookup
+
     uint64_t hashKey = board.hash();
     auto [found, score] = tt.lookup(hashKey, depth, alpha, beta);
     if (found)
@@ -202,77 +175,70 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
         return score;
     }
 
-    // Generate legal moves
+
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
 
-    // Check for checkmate/stalemate
     if (moves.empty())
     {
         if (board.inCheck())
         {
-            // Checkmate - make closer mates have a higher score
             return -CHECKMATE_SCORE + ply;
         }
         else
         {
-            return DRAW_SCORE; // Stalemate
+            return DRAW_SCORE;
         }
     }
 
-    // Order moves for better pruning
     orderMoves(board, moves);
 
     int bestScore = -INF;
     int alphaOriginal = alpha;
     chess::Move bestMove = chess::Move::NULL_MOVE;
 
-    // Iterate through each move
     for (int i = 0; i < moves.size(); i++)
     {
-        // Check for timeout periodically to avoid too many expensive time checks
         if ((nodes & 1023) == 0) {
             auto currentTime = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count();
             if (elapsed > TIME_LIMIT * 1000) {
                 timeIsUp = true;
-                break; // Exit the move loop early
+                break;
             }
         }
 
         chess::Move move = moves[i];
 
-        // Late Move Reduction
+
         bool isReduced = false;
         bool isCapture = board.at(move.to()) != chess::Piece::NONE;
         bool isPromotion = move.typeOf() == chess::Move::PROMOTION;
         bool givesCheck = false;
 
-        // Make the move
+
         board.makeMove(move);
 
-        // Check if this move gives check
+
         givesCheck = board.inCheck();
 
-        // Late move reduction for quiet moves after we've searched several moves
         int newDepth = depth - 1;
 
-        // Perform late move reduction for quiet moves after first few moves
+
         if (depth >= 3 && i >= 4 && !isCapture && !isPromotion && !givesCheck)
         {
             isReduced = true;
-            newDepth = depth - 2; // Reduce search depth
+            newDepth = depth - 2;
         }
 
-        // Recursive negamax call with negated bounds
+
         int score;
 
-        // If reduced search, do a null-window search first
+
         if (isReduced)
         {
             score = -negamax(board, newDepth, ply + 1, -alpha - 1, -alpha, nodes);
 
-            // If the reduced search returns a promising score, search again with full depth
             if (score > alpha && !timeIsUp)
             {
                 score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, nodes);
@@ -280,45 +246,40 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
         }
         else
         {
-            // Full-window search for promising moves
+
             score = -negamax(board, newDepth, ply + 1, -beta, -alpha, nodes);
         }
 
-        // Undo the move
+
         board.unmakeMove(move);
 
-        // If time is up, don't update scores
+
         if (timeIsUp) {
             break;
         }
 
-        // Update best score
         if (score > bestScore)
         {
             bestScore = score;
             bestMove = move;
         }
 
-        // Alpha-beta pruning
         if (score > alpha)
         {
             alpha = score;
 
-            // If we found a move that's too good, no need to search further
             if (alpha >= beta)
             {
                 tt.store(hashKey, beta, TTFlag::LOWER_BOUND, depth);
-                return beta; // Beta cutoff (fail-high)
+                return beta;
             }
         }
     }
 
-    // If time is up, return current alpha as an approximation
     if (timeIsUp) {
         return alpha;
     }
 
-    // Store result in transposition table
     TTFlag flag = alpha > alphaOriginal ? TTFlag::EXACT_SCORE : TTFlag::UPPER_BOUND;
     tt.store(hashKey, bestScore, flag, depth);
 
@@ -327,21 +288,18 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
 
 int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes, int ply)
 {
-    nodes++; // Increment node counter
+    nodes++;
     
-    // Mate distance pruning - revised implementation
     if (alpha < -CHECKMATE_SCORE + ply) alpha = -CHECKMATE_SCORE + ply;
     if (beta > CHECKMATE_SCORE - ply) beta = CHECKMATE_SCORE - ply;
     if (alpha >= beta)
         return alpha;
         
-    // Quick check for draw conditions
     if (board.isInsufficientMaterial() || board.isRepetition(1) || board.isHalfMoveDraw())
     {
-        return DRAW_SCORE; // Draw
+        return DRAW_SCORE;
     }
     
-    // Maximum quiescence search depth safety check
     const int MAX_QUIESCENCE_DEPTH = 10;
     if (ply >= MAX_QUIESCENCE_DEPTH)
         return evaluatePosition(board);
@@ -370,48 +328,41 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
     }
 
     chess::Movelist moves;
-    // In check, we must consider all legal moves
     if (inCheck)
     {
         chess::movegen::legalmoves(moves, board);
     }
     else
     {
-        // Only consider captures and promotions in quiescence search
         chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
         orderMoves(board, moves);
     }
 
     for (const auto &move : moves)
     {
-        // Static Exchange Evaluation (SEE) pruning for bad captures
         if (!inCheck && !SEE::isGoodCapture(move, board, -20))
         {
-            continue; // Skip capturing moves that lose material
+            continue;
         }
 
         board.makeMove(move);
 
-        // Recursive quiescence search with incremented ply
         int score = -quiesence(board, -beta, -alpha, nodes, ply + 1);
 
         board.unmakeMove(move);
 
-        // Beta cutoff
         if (score >= beta)
         {
             tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
             return beta;
         }
-        // Update alpha
         if (score > alpha)
             alpha = score;
     }
     
-    // Detect checkmate within quiescence search
     if (inCheck && moves.size() == 0)
     {
-        return -CHECKMATE_SCORE + ply; // Checkmate with distance penalty
+        return -CHECKMATE_SCORE + ply;
     }
 
     tt.store(hashKey, alpha, TTFlag::UPPER_BOUND, 0);
@@ -420,13 +371,13 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
 
 void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves)
 {
-    // Score each move using heuristics
+
     for (auto &move : moves)
     {
         scoreMoves(board, move);
     }
 
-    // Sort moves by score (highest first)
+
     moves.sort();
 }
 
@@ -434,17 +385,13 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
 {
     int score = 0;
 
-    // Score captures based on MVV-LVA (Most Valuable Victim, Least Valuable Aggressor)
     if (board.at(move.to()) != chess::Piece::NONE)
     {
-        // Get piece types
         chess::PieceType captured = chess::utils::typeOfPiece(board.at(move.to()));
         chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
 
-        // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
         score = SEE::getMvvLvaScore(captured, attacker);
 
-        // Add bonus for good captures based on SEE
         if (score < 6000)
         {
             if (SEE::isGoodCapture(move, board, 0))
@@ -464,10 +411,8 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
                 1000;
     }
 
-    // Score promotions
     if (move.typeOf() == chess::Move::PROMOTION)
     {
-        // Higher score for queen promotions
         if (move.promotionType() == chess::PieceType::QUEEN)
             score += 100000;
         else if (move.promotionType() == chess::PieceType::ROOK)
@@ -477,16 +422,12 @@ void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
             score += 300;
     }
 
-    // We could add more scoring factors here:
-    // - Killer moves (quiet moves that caused beta cutoffs at the same depth)
-    // - History heuristic (for quiet moves)
 
     move.setScore(score);
 }
 
 int ChessEngine::evaluatePosition(const chess::Board &board)
 {
-    // The board evaluation is delegated to the Evaluation class
     int score = evaluation.evaluate(board);
     return score;
 }
