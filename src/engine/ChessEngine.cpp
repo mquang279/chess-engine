@@ -208,28 +208,29 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
             return beta;  // Static null move pruning cutoff
         }
         
-        // Adaptive reduction based on position evaluation and material advantage
-        int R = 3 + depth / 4 + std::min(3, materialAdv / 200); 
-        if (inEndgame) R = std::max(2, R - 1);
-        if (materialAdv > 500) R++; // Extra reduction with big material advantage
-        R = std::min(R, depth - 1); // Don't reduce beyond depth 1
-        R = std::min(R, 4);         // Maximum reduction of 4 plies
-        
-        board.makeNullMove();
-        int nullScore = -negamax(board, depth - 1 - R, -beta, -beta + 1, ply + 1, nodes); 
-        board.unmakeNullMove();
+        if (!inEndgame) {
+            // Adaptive reduction based on position evaluation and material advantage
+            int R = 3 + depth / 4 + std::min(3, materialAdv / 200); 
+            if (materialAdv > 500) R++; // Extra reduction with big material advantage
+            R = std::min(R, depth - 1); // Don't reduce beyond depth 1
+            R = std::min(R, 4);         // Maximum reduction of 4 plies
+            
+            board.makeNullMove();
+            int nullScore = -negamax(board, depth - 1 - R, ply + 1, -beta, -beta + 1, nodes);
+            board.unmakeNullMove();
 
-        if (nullScore >= beta) {
-            // Enhanced verification search for positions that might be zugzwang
-            if (depth >= 5 && (inEndgame || std::abs(eval - beta) < 100)) {
-                // Use a deeper verification search for critical positions
-                if (verifyNullMovePrune(board, depth, beta, nodes)) {
+            if (nullScore >= beta) {
+                // Enhanced verification search for positions that might be zugzwang
+                if (depth >= 5 && std::abs(eval - beta) < 100) {
+                    // Use a deeper verification search for critical positions
+                    if (verifyNullMovePrune(board, depth, beta, nodes)) {
+                        return beta;
+                    }
+                } 
+                else {
+                    // More confident positions - can safely return beta
                     return beta;
                 }
-            } 
-            else {
-                // More confident positions - can safely return beta
-                return beta;
             }
         }
     }
@@ -272,8 +273,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
         bool isPromotion = move.typeOf() == chess::Move::PROMOTION;
 
         // Late Move Pruning (LMP) - Skip quiet moves after trying several
-        // Only for shallow depths and quiet moves
-        if (depth <= 3 && i >= lmpLimit && !isCapture && !isPromotion && !board.inCheck())
+        if (depth <= 3 && i >= lmpLimit && !isCapture && !isPromotion && !board.inCheck() && !inEndgame)
         {
             continue; // Skip this quiet move entirely
         }
@@ -286,7 +286,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
 
 
         // Futility Pruning - Skip moves unlikely to improve alpha
-        if (depth <= 3 && !isCapture && !isPromotion && !givesCheck && !board.inCheck())
+        if (depth <= 3 && !isCapture && !isPromotion && !givesCheck && !board.inCheck() && !inEndgame)
         {
             // Skip moves that can't possibly improve alpha even with a generous margin
             if (staticEval + futilityMargin <= alpha)
@@ -314,6 +314,9 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
             // Less reduction in improving positions
             if (improving && reduction > 1)
                 reduction--;
+                
+            if (inEndgame && reduction > 1) 
+                reduction--;
 
             isReduced = true;
             newDepth = depth - reduction;
@@ -322,6 +325,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
             if (newDepth < 1)
                 newDepth = 1;
         }
+
         // Recursive negamax call with negated bounds
         int score;
 
