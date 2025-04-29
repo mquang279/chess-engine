@@ -54,7 +54,7 @@ class UI:
         self.check_highlight_image = pygame.Surface((self.square_size, self.square_size), pygame.SRCALPHA)
         pygame.draw.rect(self.check_highlight_image, (255, 255, 0, 255), self.check_highlight_image.get_rect(), 2)
 
-        self.colors = [pygame.Color(240, 217, 181), pygame.Color(181, 136, 99)]
+        self.colors = [pygame.Color(77,83,88), pygame.Color(106,114,120)]
         self.button_color = pygame.Color("lightblue")
         self.hover_color = pygame.Color("skyblue")
         self.text_color = pygame.Color("black")
@@ -165,7 +165,7 @@ class UI:
 
                 if self.game.last_move and (
                         square == self.game.last_move.from_square or square == self.game.last_move.to_square):
-                    pygame.draw.rect(self.screen, pygame.Color(255, 255, 143), pygame.Rect(
+                    pygame.draw.rect(self.screen, pygame.Color(56,62,86), pygame.Rect(
                         col * self.square_size,
                         row * self.square_size,
                         self.square_size,
@@ -199,6 +199,12 @@ class UI:
         turn_text = "White to move" if self.game.board.turn == chess.WHITE else "Black to move"
         turn_surface = self.small_font.render(turn_text, True, pygame.Color("black"))
         self.screen.blit(turn_surface, (self.WIDTH - turn_surface.get_width() - 10, 8 * self.square_size + 10))
+
+        # Display engine calculation time if this is a game with a bot
+        if self.game.mode != GameMode.HUMAN_VS_HUMAN and hasattr(self.game, 'last_engine_calc_time') and self.game.last_engine_calc_time > 0:
+            time_text = f"Engine time: {self.game.last_engine_calc_time:.4f} sec"
+            time_surface = self.small_font.render(time_text, True, pygame.Color("black"))
+            self.screen.blit(time_surface, (10, 8 * self.square_size + 35))
 
         mouse_pos = pygame.mouse.get_pos()
         button_color = self.hover_color if self.restart_button.collidepoint(mouse_pos) else self.button_color

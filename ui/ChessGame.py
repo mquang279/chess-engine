@@ -22,6 +22,9 @@ class ChessGame:
         self.on_move_callback = None
         self.on_capture_callback = None
         self.on_check_callback = None
+        
+        # Track engine calculation time
+        self.last_engine_calc_time = 0
 
         # Initialize bots based on mode and human_side
         if mode == GameMode.BOT_VS_BOT:
@@ -101,6 +104,12 @@ class ChessGame:
                 # Make the move
                 self.board.push(move)
                 self.last_move = move
+                
+                # Store the engine calculation time
+                if hasattr(bot, 'get_last_move_time'):
+                    self.last_engine_calc_time = bot.get_last_move_time()
+                else:
+                    self.last_engine_calc_time = 0
 
                 # Call the appropriate sound callback
                 if is_capture and self.on_capture_callback:

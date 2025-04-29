@@ -3,6 +3,7 @@ import chess
 import sys
 import os
 import traceback
+import time  # Added time module for measuring engine performance
 
 # Add the parent directory to the Python path so we can import modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -13,6 +14,7 @@ from ui.ChessEngineBridge import ChessEngineBridge
 class ChessBot:
     def __init__(self):
         self.engine = None
+        self.last_move_time = 0  # Store the time taken for the last move
         try:
             # Use the bridge instead of direct pybind11 bindings
             self.engine = ChessEngineBridge()
@@ -35,8 +37,15 @@ class ChessBot:
         try:
             self.engine.set_position(board.fen())
             
-            # Get best move from the C++ engine (already returns a python-chess Move object)
+            # Measure the time taken for the engine to find the best move
+            start_time = time.time()
             best_move = self.engine.get_best_move()
+            end_time = time.time()
+            
+            # Calculate and store the time taken
+            self.last_move_time = end_time - start_time
+            print(f"Engine calculation time: {self.last_move_time:.4f} seconds")
+            
             if best_move:
                 return best_move
                 
@@ -61,3 +70,7 @@ class ChessBot:
         except Exception as e:
             print(f"Error getting evaluation from engine: {e}")
             return None
+            
+    def get_last_move_time(self):
+        """Return the time taken for the last engine move calculation"""
+        return self.last_move_time
