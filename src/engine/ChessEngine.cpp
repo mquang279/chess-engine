@@ -34,8 +34,9 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         }
     }
 
-    // Start timer
-    auto startTime = std::chrono::steady_clock::now();
+    // Start timer and reset timeout flag
+    startTime = std::chrono::steady_clock::now();
+    timeIsUp = false;
 
     // Initialize search statistics
     SearchStats stats;
@@ -61,9 +62,17 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         return chess::Move::NULL_MOVE;
     }
 
+    // Order moves before iterative deepening
+    orderMoves(board, moves);
+
     // Perform iterative deepening
     for (int depth = 1; depth <= MAX_DEPTH; depth++)
     {
+        // If time is already up, break the loop
+        if (timeIsUp) {
+            break;
+        }
+
         stats.depth = depth;
         stats.reset();
 
@@ -75,26 +84,34 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
         uint64_t nodes = 0;
         int score;
 
-        // Main search call with full window - start with ply=0
-        score = negamax(board, depth, 0, alpha, beta, nodes);
+        // Track best move at current depth
+        chess::Move currentBestMove = chess::Move::NULL_MOVE;
 
-        // Store statistics
-        stats.score = score;
-        stats.nodes = nodes;
-
-        // Track best move found at each depth
+        // Main search with all legal moves at the current depth
         for (const auto &move : moves)
         {
             board.makeMove(move);
             int moveScore = -negamax(board, depth - 1, 1, -beta, -alpha, nodes);
             board.unmakeMove(move);
+            
+            // If time is up during search, break early
+            if (timeIsUp) {
+                break;
+            }
 
             if (moveScore > alpha)
             {
                 alpha = moveScore;
-                bestMove = move;
-                stats.bestMove = bestMove;
+                currentBestMove = move;
             }
+        }
+
+        // If we completed the depth without timing out, update the best move
+        if (!timeIsUp && currentBestMove != chess::Move::NULL_MOVE) {
+            bestMove = currentBestMove;
+            stats.bestMove = bestMove;
+            stats.score = alpha;
+            stats.nodes = nodes;
         }
 
         // Check elapsed time
@@ -116,8 +133,9 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
                   << std::endl;
 
         // Check if we've exceeded the time limit
-        if (elapsed.count() > TIME_LIMIT * 1000 / 2) // Use half the available time for safety
-        {
+        if (elapsed.count() > TIME_LIMIT * 1000) {
+            timeIsUp = true;
+            std::cout << "Time limit reached after depth " << depth << std::endl;
             break;
         }
     }
@@ -144,6 +162,16 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
 
 int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int beta, uint64_t &nodes)
 {
+    // Check if time is up - do this early to abort search quickly
+    if ((nodes & 1023) == 0) { // Check time every 1024 nodes to avoid expensive time checks
+        auto currentTime = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count();
+        if (elapsed > TIME_LIMIT * 1000) {
+            timeIsUp = true;
+            return alpha; // Return a reasonable value to avoid disrupting the search
+        }
+    }
+
     nodes++; // Increment node counter
 
     // Mate distance pruning - revised implementation
@@ -202,6 +230,16 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
     // Iterate through each move
     for (int i = 0; i < moves.size(); i++)
     {
+        // Check for timeout periodically to avoid too many expensive time checks
+        if ((nodes & 1023) == 0) {
+            auto currentTime = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - startTime).count();
+            if (elapsed > TIME_LIMIT * 1000) {
+                timeIsUp = true;
+                break; // Exit the move loop early
+            }
+        }
+
         chess::Move move = moves[i];
 
         // Late Move Reduction
@@ -235,7 +273,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
             score = -negamax(board, newDepth, ply + 1, -alpha - 1, -alpha, nodes);
 
             // If the reduced search returns a promising score, search again with full depth
-            if (score > alpha)
+            if (score > alpha && !timeIsUp)
             {
                 score = -negamax(board, depth - 1, ply + 1, -beta, -alpha, nodes);
             }
@@ -248,6 +286,11 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
 
         // Undo the move
         board.unmakeMove(move);
+
+        // If time is up, don't update scores
+        if (timeIsUp) {
+            break;
+        }
 
         // Update best score
         if (score > bestScore)
@@ -268,6 +311,11 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
                 return beta; // Beta cutoff (fail-high)
             }
         }
+    }
+
+    // If time is up, return current alpha as an approximation
+    if (timeIsUp) {
+        return alpha;
     }
 
     // Store result in transposition table

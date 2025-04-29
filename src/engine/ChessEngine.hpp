@@ -42,6 +42,10 @@ private:
     bool useOpeningBook = true;
     int moveCounter = 0;
 
+    // Time management
+    bool timeIsUp = false;
+    std::chrono::time_point<std::chrono::steady_clock> startTime;
+
     struct SearchStats
     {
         int depth = 0;
