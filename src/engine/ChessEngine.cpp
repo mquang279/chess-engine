@@ -3,7 +3,7 @@
 #include <iomanip>
 
 ChessEngine::ChessEngine()
-    : rng(std::random_device{}()), tt(64)
+    : rng(std::random_device{}()), tt(64), history(), killers()
 {
     initializeOpeningBook();
 }
@@ -35,6 +35,7 @@ chess::Move ChessEngine::getBestMove(chess::Board &board)
     }
 
     // Start timer
+    history.clear();
     auto startTime = std::chrono::steady_clock::now();
 
     // Initialize search statistics
@@ -193,7 +194,7 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
     }
 
     // Order moves for better pruning
-    orderMoves(board, moves);
+    orderMoves(board, moves, ply);
 
     int bestScore = -INF;
     int alphaOriginal = alpha;
@@ -269,6 +270,10 @@ int ChessEngine::negamax(chess::Board &board, int depth, int ply, int alpha, int
             // If we found a move that's too good, no need to search further
             if (alpha >= beta)
             {
+                if (!board.isCapture(move)) {
+                    killers.put(move, ply);
+                    history.update(move, depth, board.sideToMove() == chess::Color::WHITE);
+                }
                 tt.store(hashKey, beta, TTFlag::LOWER_BOUND, depth);
                 return beta; // Beta cutoff (fail-high)
             }
@@ -312,9 +317,10 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
         return score;
     }
 
+    int standPat = -INF;
     if (!inCheck)
     {
-        int standPat = evaluatePosition(board);
+        standPat = evaluatePosition(board);
         if (standPat >= beta)
         {
             tt.store(hashKey, beta, TTFlag::LOWER_BOUND, 0);
@@ -327,20 +333,34 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
     }
 
     chess::Movelist moves;
+
     // In check, we must consider all legal moves
     if (inCheck)
     {
         chess::movegen::legalmoves(moves, board);
+        orderMoves(board, moves, ply);
+
     }
     else
     {
         // Only consider captures and promotions in quiescence search
         chess::movegen::legalmoves<chess::MoveGenType::CAPTURE>(moves, board);
-        orderMoves(board, moves);
+        orderMoves(board, moves, ply);
     }
 
     for (const auto &move : moves)
     {
+        if (!inCheck)
+        {
+            int moveGain = move.score();
+
+            // Delta pruning: skip if move can't improve alpha
+            if (standPat + moveGain + DELTA <= alpha)
+            {
+                continue;
+            }
+        }
+
         // Static Exchange Evaluation (SEE) pruning for bad captures
         if (!inCheck && !SEE::isGoodCapture(move, board, -20))
         {
@@ -375,51 +395,57 @@ int ChessEngine::quiesence(chess::Board &board, int alpha, int beta, uint64_t &n
     return alpha;
 }
 
-void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves)
+void ChessEngine::orderMoves(chess::Board &board, chess::Movelist &moves, const int ply)
 {
     // Score each move using heuristics
     for (auto &move : moves)
     {
-        scoreMoves(board, move);
+        scoreMoves(board, move, ply);
     }
 
     // Sort moves by score (highest first)
     moves.sort();
 }
 
-void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move)
+void ChessEngine::scoreMoves(const chess::Board &board, chess::Move &move, const int ply)
 {
     int score = 0;
 
     // Score captures based on MVV-LVA (Most Valuable Victim, Least Valuable Aggressor)
-    if (board.at(move.to()) != chess::Piece::NONE)
+    if (board.isCapture(move))
     {
-        // Get piece types
-        chess::PieceType captured = chess::utils::typeOfPiece(board.at(move.to()));
-        chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
+        if (move.typeOf() == chess::Move::ENPASSANT) {
+            score = SEE::getMvvLvaScore(chess::PieceType::PAWN,
+                                    chess::PieceType::PAWN)  + 1000;
+        } else {
+            // Get piece types
+            chess::PieceType captured = chess::utils::typeOfPiece(board.at(move.to()));
+            chess::PieceType attacker = chess::utils::typeOfPiece(board.at(move.from()));
 
-        // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
-        score = SEE::getMvvLvaScore(captured, attacker);
+            // MVV-LVA: 6*victim - aggressor + 10 (to ensure captures are considered first)
+            score = SEE::getMvvLvaScore(captured, attacker);
 
-        // Add bonus for good captures based on SEE
-        if (score < 6000)
-        {
-            if (SEE::isGoodCapture(move, board, 0))
+            // Add bonus for good captures based on SEE
+            if (score < 6000)
             {
-                score += GOOD_CAPTURE_WEIGHT;
-            }
-            else
-            {
-                score = 0;
+                if (SEE::isGoodCapture(move, board, 0))
+                {
+                    score += GOOD_CAPTURE_WEIGHT;
+                }
+                else
+                {
+                    score = 0;
+                }
             }
         }
+
     }
-    else if (move.typeOf() == chess::Move::ENPASSANT)
+    else
     {
-        score = SEE::getMvvLvaScore(chess::PieceType::PAWN,
-                                    chess::PieceType::PAWN) +
-                1000;
-    }
+        if (ply > 0 && killers.isKiller(move, ply)) {
+            score += 50; // Killer move bonus
+        }
+        score += history.get(move, board.sideToMove() == chess::Color::WHITE);    }
 
     // Score promotions
     if (move.typeOf() == chess::Move::PROMOTION)

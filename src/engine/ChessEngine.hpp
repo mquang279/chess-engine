@@ -3,13 +3,16 @@
 
 #include "../chess.hpp"
 #include "Evaluation.hpp"
+#include "History.hpp"
+#include "Killers.hpp"
 #include "OpeningMove.hpp"
 #include "transposition_table.hpp"
-#include <vector>
 #include <chrono>
 #include <iostream>
 #include <limits>
+#include <queue>
 #include <random>
+#include <vector>
 
 class ChessEngine
 {
@@ -33,6 +36,7 @@ public:
     static constexpr int MATE_VALUE = 30000;
     static constexpr int CHECKMATE_SCORE = MATE_VALUE;
     static constexpr int DRAW_SCORE = 0;
+    static constexpr int DELTA = 200;
 
 private:
     // Constants for searchMoves arrays
@@ -63,9 +67,9 @@ private:
 
     int quiesence(chess::Board &board, int alpha, int beta, uint64_t &nodes, int ply = 0);
 
-    void orderMoves(chess::Board &board, chess::Movelist &moves);
+    void orderMoves(chess::Board &board, chess::Movelist &moves, int ply);
 
-    void scoreMoves(const chess::Board &board, chess::Move &move);
+    void scoreMoves(const chess::Board &board, chess::Move &move, int ply);
 
     int evaluatePosition(const chess::Board &board);
 
@@ -78,6 +82,8 @@ private:
     std::array<std::array<chess::Move, NUM_MOVES>, NUM_PLIES> searchMoves;
 
     TranspositionTable tt;
+    HISTORY::History history;
+    KILLER::Killers killers;
 };
 
 #endif // CHESS_ENGINE_HPP
