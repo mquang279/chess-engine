@@ -2,6 +2,10 @@
 
 A high-performance chess engine implemented in C++ with Python bindings.
 
+# Demo
+
+https://www.youtube.com/watch?v=h2RDFkD5xn8
+
 ## Features
 
 - **Strong AI**: Implements negamax search with alpha-beta pruning
